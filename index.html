@@ -171,12 +171,12 @@
     const distValue = document.getElementById('dist-value');
 
     // CONFIGURACIÓN DE AUDIO EXTERNO
-    const deathAudio = new Audio('jijijijaa.mp3');
+    const deathAudio = new Audio('jijijijaa.mp3'); // Para el reino oscuro
+    const mainEntityAudio = new Audio('queque.mp3'); // Para la entidad principal
 
     // CONFIGURACIÓN DE IMAGEN DEL MONSTRUO
-    // Asegúrate de tener monstruo.png en tu repositorio de GitHub
     const stalkerImg = new Image();
-    stalkerImg.src = 'monstruo.png'; 
+    stalkerImg.src = 'miniqueque.png'; 
 
     let spawnX = Math.floor(Math.random() * 200 - 100) + 0.5;
     let spawnY = Math.floor(Math.random() * 200 - 100) + 0.5;
@@ -199,12 +199,13 @@
     let time = 0; 
     let framesAlive = 0;
     let gameState = 'maze'; // Puede ser 'maze' o 'dark_realm'
-    let zBuffer = new Array(canvas.width); // Para dibujar sprites correctamente tras los muros
+    let zBuffer = new Array(canvas.width); 
 
     // --- ESTADO DE LAS ENTIDADES ---
-    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.9 };
+    // VELOCIDAD REDUCIDA PARA LA ENTIDAD PRINCIPAL (0.5 en lugar de 0.9)
+    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.5 };
     let shadows = []; 
-    let stalkerTriggerFrame = 7200; // 120 segundos a 60 fps (aprox)
+    let stalkerTriggerFrame = 7200; 
 
     const SEED = Math.random() * 10000;
     const mod = (n, m) => ((n % m) + m) % m;
@@ -219,8 +220,7 @@
     // GENERACIÓN DEL MAPA (Muros)
     function getMapBlock(x, y) {
         if (gameState === 'dark_realm') {
-            // En el Reino Oscuro hay columnas esparcidas al azar para que no esté totalmente vacío
-            if (hash(x, y) > 0.95) return 10; // Muro negro
+            if (hash(x, y) > 0.95) return 10; 
             return 0;
         }
 
@@ -235,7 +235,6 @@
         const localY = mod(y, CHUNK_SIZE);
         const centerX = 5.5; 
 
-        // ZONAS NORMALES (95%)
         if (chunkHash < 0.12) {
             if (localX === 0 || localX === CHUNK_SIZE - 1 || localY === 0 || localY === CHUNK_SIZE - 1) {
                 if (Math.abs(localX - centerX) < 1 || Math.abs(localY - centerX) < 1) return 0; return 1; 
@@ -275,75 +274,32 @@
         }
         else if (chunkHash < 0.95) return (localX === 0 || localX === CHUNK_SIZE - 1 || localY === 0 || localY === CHUNK_SIZE - 1) ? ((h > 0.5) ? 0 : 5) : 0;
         
-        // ZONAS SURREALISTAS (5% oculto)
-        else if (chunkHash < 0.96) return (h > 0.8) ? 8 : 0; // Vaporwave
-        else if (chunkHash < 0.97) return (Math.sin(localX) + Math.cos(localY) > 0.5) ? 9 : 0; // Carne
-        else if (chunkHash < 0.98) return (h > 0.6) ? 10 : 0; // Matrix
-        else if (chunkHash < 0.99) return (mod(localX, 4) === 0 && mod(localY, 4) === 0) ? 11 : 0; // Vacío
+        else if (chunkHash < 0.96) return (h > 0.8) ? 8 : 0; 
+        else if (chunkHash < 0.97) return (Math.sin(localX) + Math.cos(localY) > 0.5) ? 9 : 0; 
+        else if (chunkHash < 0.98) return (h > 0.6) ? 10 : 0; 
+        else if (chunkHash < 0.99) return (mod(localX, 4) === 0 && mod(localY, 4) === 0) ? 11 : 0; 
         else {
             if (localX === 0 || localX === CHUNK_SIZE - 1 || localY === 0 || localY === CHUNK_SIZE - 1) {
                 if (Math.abs(localX - centerX) < 1 || Math.abs(localY - centerX) < 1) return 0;
-                return 12; // Estroboscópico
+                return 12; 
             }
             if (localX === localY || localX === CHUNK_SIZE - localY) return (h > 0.5) ? 0 : 12;
             return 0;
         }
     }
 
-    // EFECTO DE SONIDO METÁLICO ATERRADOR (Jumpscare modificado)
-    function playMetalClang() {
-        try {
-            let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // Oscilador 1: Un chirrido agudo que cae rápidamente (Sierras)
-            let osc1 = audioCtx.createOscillator();
-            osc1.type = 'sawtooth';
-            osc1.frequency.setValueAtTime(800, audioCtx.currentTime);
-            osc1.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + 1.5);
-            
-            // Oscilador 2: Ruido metálico disonante y grueso (Cuadrado)
-            let osc2 = audioCtx.createOscillator();
-            osc2.type = 'square';
-            osc2.frequency.setValueAtTime(333, audioCtx.currentTime);
-            osc2.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 1.5);
-
-            // Oscilador 3: Un retumbar grave y monstruoso (Sierra)
-            let osc3 = audioCtx.createOscillator();
-            osc3.type = 'sawtooth';
-            osc3.frequency.setValueAtTime(150, audioCtx.currentTime);
-            osc3.frequency.exponentialRampToValueAtTime(5, audioCtx.currentTime + 1.5);
-            
-            // Nodo de volumen (Muy alto al principio, bajando a 0 en 1.5 segundos)
-            let gainNode = audioCtx.createGain();
-            gainNode.gain.setValueAtTime(2.5, audioCtx.currentTime); // Volumen alto para el susto
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.5);
-            
-            // Conectar todo
-            osc1.connect(gainNode);
-            osc2.connect(gainNode);
-            osc3.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            
-            // Iniciar y detener
-            osc1.start(); osc2.start(); osc3.start();
-            osc1.stop(audioCtx.currentTime + 1.5);
-            osc2.stop(audioCtx.currentTime + 1.5);
-            osc3.stop(audioCtx.currentTime + 1.5);
-        } catch(e) { console.log("Audio API bloqueada"); }
-    }
-
     function initDarkRealm() {
         gameState = 'dark_realm';
         distanceHud.style.display = 'none';
         
-        // Generar 20 sombras humanoides aleatorias alrededor del jugador
         shadows = [];
         for (let i = 0; i < 20; i++) {
             shadows.push({
                 type: 'shadow',
                 x: playerX + (Math.random() - 0.5) * 40,
                 y: playerY + (Math.random() - 0.5) * 40,
-                speed: walkSpeed * (0.4 + Math.random() * 0.4) // Velocidades variables
+                // VELOCIDAD REDUCIDA PARA LAS SOMBRAS TAMBIÉN
+                speed: walkSpeed * (0.2 + Math.random() * 0.2) 
             });
         }
     }
@@ -356,7 +312,6 @@
         shadows = [];
         stamina = maxStamina;
         
-        // Volver al inicio
         playerX = spawnX;
         playerY = spawnY;
     }
@@ -384,17 +339,14 @@
         if (gameState === 'maze') {
             framesAlive++;
             
-            // ACTIVAR LA ENTIDAD A LOS 120 SEGUNDOS (7200 frames)
             if (framesAlive > stalkerTriggerFrame && !stalker.active) {
                 stalker.active = true;
-                // Spawnea a 15 unidades de distancia, a espaldas del jugador
                 stalker.x = playerX - dirX * 15;
                 stalker.y = playerY - dirY * 15;
                 distanceHud.style.display = 'block';
             }
 
             if (stalker.active) {
-                // Perseguir al jugador (ignora muros para ser implacable)
                 let dx = playerX - stalker.x;
                 let dy = playerY - stalker.y;
                 let dist = Math.sqrt(dx*dx + dy*dy);
@@ -404,18 +356,16 @@
                     stalker.y += (dy / dist) * stalker.speed;
                 }
 
-                // Actualizar HUD
                 distValue.innerText = dist.toFixed(1);
 
-                // Si te atrapa
+                // SI TE ATRAPA LA ENTIDAD PRINCIPAL
                 if (dist < 0.6) {
-                    playMetalClang();
+                    mainEntityAudio.play().catch(e => console.log("Audio bloqueado"));
                     initDarkRealm();
                 }
             }
         } 
         else if (gameState === 'dark_realm') {
-            // Actualizar sombras humanoides
             for (let s of shadows) {
                 let dx = playerX - s.x;
                 let dy = playerY - s.y;
@@ -426,9 +376,9 @@
                     s.y += (dy / dist) * s.speed;
                 }
 
-                // Si una sombra te toca
+                // SI TE ATRAPA UNA SOMBRA EN EL REINO OSCURO
                 if (dist < 0.5) {
-                    deathAudio.play().catch(e => console.log("Reproducción de audio bloqueada por el navegador"));
+                    deathAudio.play().catch(e => console.log("Audio bloqueado"));
                     resetGame();
                     return;
                 }
@@ -441,7 +391,7 @@
         if (keys.shift && isMoving && stamina > 0) {
             currentSpeed = runSpeed; stamina -= 0.15; 
         } else {
-            currentSpeed = walkSpeed; if (stamina < maxStamina) stamina += 0.05; // Estamina lenta
+            currentSpeed = walkSpeed; if (stamina < maxStamina) stamina += 0.05; 
         }
         
         if (stamina < 0) stamina = 0; if (stamina > maxStamina) stamina = maxStamina;
@@ -472,43 +422,34 @@
         }
     }
 
-    // --- RENDERIZADO DE SPRITES (Entidad Negra / Sombras) ---
     function drawSprites(spritesToDraw, w, h) {
-        // Calcular distancia de cada sprite al jugador
         for (let i = 0; i < spritesToDraw.length; i++) {
             spritesToDraw[i].dist = (playerX - spritesToDraw[i].x) ** 2 + (playerY - spritesToDraw[i].y) ** 2;
         }
-        // Ordenar de más lejos a más cerca
         spritesToDraw.sort((a, b) => b.dist - a.dist);
 
         for (let i = 0; i < spritesToDraw.length; i++) {
             let s = spritesToDraw[i];
             
-            // Traducir la posición del sprite respecto al jugador
             let spriteX = s.x - playerX;
             let spriteY = s.y - playerY;
 
-            // Transformar con la matriz inversa de la cámara
             let invDet = 1.0 / (planeX * dirY - dirX * planeY);
             let transformX = invDet * (dirY * spriteX - dirX * spriteY);
             let transformY = invDet * (-planeY * spriteX + planeX * spriteY); 
 
-            if (transformY > 0.1) { // Si está frente a la cámara
+            if (transformY > 0.1) { 
                 let spriteScreenX = Math.floor((w / 2) * (1 + transformX / transformY));
                 
-                // Escala de altura del sprite
                 let sHeight = Math.abs(Math.floor(h / transformY));
-                if (s.type === 'stalker') sHeight *= 1.2; // La entidad es más alta
+                if (s.type === 'stalker') sHeight *= 1.2; 
                 
                 let drawStartY = Math.floor(-sHeight / 2 + h / 2);
-                let originalDrawStartY = drawStartY;
                 if (drawStartY < 0) drawStartY = 0;
                 
                 let drawEndY = Math.floor(sHeight / 2 + h / 2);
-                let originalDrawEndY = drawEndY;
                 if (drawEndY >= h) drawEndY = h - 1;
 
-                // Ancho del sprite
                 let sWidth = sHeight / (s.type === 'stalker' ? 1.5 : 2);
                 let drawStartX = Math.floor(-sWidth / 2 + spriteScreenX);
                 let drawEndX = Math.floor(sWidth / 2 + spriteScreenX);
@@ -517,25 +458,19 @@
                     if (stripe >= 0 && stripe < w && transformY < zBuffer[stripe]) {
                         
                         if (s.type === 'stalker') {
-                            // DIBUJAR LA IMAGEN PNG DEL MONSTRUO
-                            // Solo se dibuja si la imagen ya cargó correctamente
                             if (stalkerImg.complete && stalkerImg.naturalWidth !== 0) {
-                                // Calcular qué parte de la imagen original (texX) corresponde a esta tira
                                 let texX = Math.floor((stripe - drawStartX) * stalkerImg.width / sWidth);
                                 let texWidth = Math.max(1, Math.floor(2 * stalkerImg.width / sWidth));
                                 
-                                // Dibujar solo esa rebanada vertical de la imagen
                                 ctx.drawImage(
                                     stalkerImg, 
-                                    texX, 0, texWidth, stalkerImg.height, // Coordenadas y tamaño de origen (en el PNG)
-                                    stripe, drawStartY, 2, drawEndY - drawStartY // Coordenadas y tamaño de destino (en el Canvas)
+                                    texX, 0, texWidth, stalkerImg.height, 
+                                    stripe, drawStartY, 2, drawEndY - drawStartY 
                                 );
                             }
                         } else {
-                            // DIBUJAR LAS SOMBRAS DEL REINO OSCURO (se quedan como rectángulos)
                             let fadeAlpha = 1;
                             if (gameState === 'dark_realm') {
-                                // Las sombras se desvanecen en la oscuridad a lo lejos
                                 fadeAlpha = Math.max(0, 1 - transformY/8); 
                             }
                             ctx.fillStyle = `rgba(15,15,15,${fadeAlpha})`;
@@ -551,11 +486,9 @@
         const w = canvas.width;
         const h = canvas.height;
 
-        // Limpiamos la pantalla
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, w, h);
 
-        // RAYCASTER PRINCIPAL (Muros)
         for (let x = 0; x < w; x += 2) { 
             let cameraX = 2 * x / w - 1;
             let rayDirX = dirX + planeX * cameraX;
@@ -570,7 +503,7 @@
             if (rayDirX < 0) { stepX = -1; sideDistX = (playerX - mapX) * deltaDistX; } else { stepX = 1; sideDistX = (mapX + 1.0 - playerX) * deltaDistX; }
             if (rayDirY < 0) { stepY = -1; sideDistY = (playerY - mapY) * deltaDistY; } else { stepY = 1; sideDistY = (mapY + 1.0 - playerY) * deltaDistY; }
 
-            let maxDepth = (gameState === 'dark_realm') ? 15 : 40; // En la oscuridad no ves muy lejos
+            let maxDepth = (gameState === 'dark_realm') ? 15 : 40; 
             
             while (hit === 0 && maxDepth > 0) {
                 if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; } else { sideDistY += deltaDistY; mapY += stepY; side = 1; }
@@ -582,10 +515,9 @@
             if (hit === 1) {
                 if (side === 0) perpWallDist = (mapX - playerX + (1 - stepX) / 2) / rayDirX; else perpWallDist = (mapY - playerY + (1 - stepY) / 2) / rayDirY;
             } else {
-                perpWallDist = 9999; // Infinito si no toca muro
+                perpWallDist = 9999; 
             }
 
-            // Guardar profundidad en el Z-Buffer para tapar correctamente los sprites
             zBuffer[x] = perpWallDist;
             zBuffer[x+1] = perpWallDist;
 
@@ -598,10 +530,8 @@
                 let drawStart = -lineHeight / 2 + h / 2; if (drawStart < 0) drawStart = 0;
                 let drawEnd = lineHeight / 2 + h / 2; if (drawEnd >= h) drawEnd = h - 1;
 
-                // Color base
                 let colorBase;
                 if (gameState === 'dark_realm') {
-                    // Los muros en el reino oscuro son casi invisibles
                     let alpha = Math.max(0, 1 - perpWallDist/8);
                     colorBase = `rgba(30, 30, 30, ${alpha})`;
                     ctx.fillStyle = colorBase;
@@ -625,7 +555,6 @@
                     ctx.fillStyle = colorBase;
                     ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
 
-                    // Texturas clásicas
                     if (wallType >= 1 && wallType <= 7) {
                         ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
                         if ((wallX * 8) % 1 < 0.1) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
@@ -642,7 +571,6 @@
                         }
                     }
 
-                    // Texturas raras (vaporwave, carne, matrix, etc)
                     if (wallType === 8) {
                         let movingWall = (wallX + time * 0.005) % 1;
                         ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
@@ -688,7 +616,6 @@
                     }
                 }
 
-                // DIBUJADO DE PISO Y TECHO 
                 let floorXWall, floorYWall;
                 if (side === 0 && rayDirX > 0) { floorXWall = mapX; floorYWall = mapY + wallX; }
                 else if (side === 0 && rayDirX < 0) { floorXWall = mapX + 1.0; floorYWall = mapY + wallX; }
@@ -702,11 +629,10 @@
                     let currentDist = h / (2.0 * y - h);
                     
                     if (gameState === 'dark_realm') {
-                        // Piso oscuro fading en el Reino Oscuro
                         let alpha = Math.max(0, 1 - currentDist/8);
                         ctx.fillStyle = `rgba(15, 15, 15, ${alpha})`;
                         ctx.fillRect(x, y, 2, 3);
-                        ctx.fillRect(x, h - y - 3, 2, 3); // Techo
+                        ctx.fillRect(x, h - y - 3, 2, 3); 
                     } else {
                         let weight = currentDist / perpWallDist;
                         let currentFloorX = weight * floorXWall + (1.0 - weight) * playerX;
@@ -723,7 +649,6 @@
             }
         }
 
-        // ================= DIBUJAR SPRITES (Entidades) =================
         let spritesToDraw = [];
         if (gameState === 'maze' && stalker.active) {
             spritesToDraw.push({type: 'stalker', x: stalker.x, y: stalker.y});
@@ -736,9 +661,7 @@
             drawSprites(spritesToDraw, w, h);
         }
 
-        // ================= EFECTO DE LINTERNA (Reino Oscuro) =================
         if (gameState === 'dark_realm') {
-            // Un gradiente radial en el centro simulando una linterna o niebla negra densa
             let gradient = ctx.createRadialGradient(w/2, h/2, 10, w/2, h/2, h/1.2);
             gradient.addColorStop(0, "rgba(0,0,0,0)");
             gradient.addColorStop(1, "rgba(0,0,0,0.98)");
