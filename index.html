@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Spectrum - The Stalker & The Dark Realm</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'VT323', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        #game-container {
+            display: flex;
+            width: 800px;
+            height: 500px;
+            border: 8px solid #00FFFF;
+            background-color: #000;
+        }
+
+        #viewport-wrapper {
+            position: relative;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            cursor: crosshair;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            background-color: #000;
+        }
+
+        #click-to-play {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 32px;
+            color: #fff;
+            text-shadow: 2px 2px 0 #000;
+            pointer-events: none;
+        }
+
+        /* Indicador de distancia de la Entidad */
+        #distance-hud {
+            position: absolute;
+            top: 10px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: red;
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+            display: none;
+            pointer-events: none;
+        }
+
+        #sidebar {
+            width: 250px;
+            background-color: #FFFF00;
+            color: #000;
+            border-left: 8px solid #000;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
+            font-size: 22px;
+            line-height: 1.4;
+        }
+
+        #sidebar h2 {
+            margin: 0 0 15px 0;
+            font-size: 32px;
+            text-align: center;
+            text-decoration: underline;
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        li {
+            margin-bottom: 10px;
+        }
+
+        .key {
+            background-color: #000;
+            color: #fff;
+            padding: 2px 6px;
+            font-weight: bold;
+        }
+
+        #stamina-container {
+            margin-top: 25px;
+        }
+        
+        #stamina-title {
+            text-align: center;
+            font-weight: bold;
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        #stamina-bg {
+            width: 100%;
+            height: 24px;
+            background: #444;
+            border: 3px solid #000;
+            box-sizing: border-box;
+        }
+
+        #stamina-fill {
+            width: 100%;
+            height: 100%;
+            background: #00FF00;
+            transition: background-color 0.2s;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="viewport-wrapper">
+        <canvas id="gameCanvas" width="320" height="200"></canvas>
+        <div id="distance-hud">Entidad a: <span id="dist-value">--</span>m</div>
+        <div id="click-to-play">CLICK PARA JUGAR</div>
+    </div>
+    <div id="sidebar">
+        <h2>CONTROLES</h2>
+        <ul>
+            <li><span class="key">MOUSE</span> MIRAR</li>
+            <li><span class="key">W</span> ADELANTE</li>
+            <li><span class="key">S</span> ATRÁS</li>
+            <li><span class="key">A</span> PASO IZQ.</li>
+            <li><span class="key">D</span> PASO DER.</li>
+            <li><span class="key">SHIFT</span> CORRER</li>
+        </ul>
+
+        <div id="stamina-container">
+            <div id="stamina-title">ESTAMINA</div>
+            <div id="stamina-bg">
+                <div id="stamina-fill"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('click-to-play');
+    const staminaFill = document.getElementById('stamina-fill');
+    const distanceHud = document.getElementById('distance-hud');
+    const distValue = document.getElementById('dist-value');
+
+    // CONFIGURACIÓN DE AUDIO EXTERNO
+    // Asegúrate de tener jijijija.mp3 en la misma carpeta al subir a GitHub
+    const deathAudio = new Audio('jijijijaa.mp3');
+
+    let spawnX = Math.floor(Math.random() * 200 - 100) + 0.5;
+    let spawnY = Math.floor(Math.random() * 200 - 100) + 0.5;
+    
+    let playerX = spawnX;
+    let playerY = spawnY;
+    let dirX = 0.0; 
+    let dirY = 1.0;
+    let planeX = 0.66; 
+    let planeY = 0.0; 
+    
+    const runSpeed = 0.07;
+    const walkSpeed = runSpeed / 3;
+    let currentSpeed = walkSpeed;
+    const mouseSensitivity = 0.003; 
+
+    const maxStamina = 100;
+    let stamina = maxStamina;
+    
+    let time = 0; 
+    let framesAlive = 0;
+    let gameState = 'maze'; // Puede ser 'maze' o 'dark_realm'
+    let zBuffer = new Array(canvas.width); // Para dibujar sprites correctamente tras los muros
+
+    // --- ESTADO DE LAS ENTIDADES ---
+    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.9 };
+    let shadows = []; 
+    let stalkerTriggerFrame = 7200; // 120 segundos a 60 fps (aprox)
+
+    const SEED = Math.random() * 10000;
+    const mod = (n, m) => ((n % m) + m) % m;
+    
+    function hash(x, y) {
+        let n = Math.sin((x + SEED) * 12.9898 + (y + SEED) * 78.233) * 43758.5453;
+        return n - Math.floor(n);
+    }
+
+    const CHUNK_SIZE = 12; 
+
+    // GENERACIÓN DEL MAPA (Muros)
+    function getMapBlock(x, y) {
+        if (gameState === 'dark_realm') {
+            // En el Reino Oscuro hay columnas esparcidas al azar para que no esté totalmente vacío
+            if (hash(x, y) > 0.95) return 10; // Muro negro
+            return 0;
+        }
+
+        if (Math.abs(x - Math.floor(spawnX)) <= 2 && Math.abs(y - Math.floor(spawnY)) <= 2) return 0; 
+        
+        const h = hash(x, y);
+        const chunkX = Math.floor(x / CHUNK_SIZE);
+        const chunkY = Math.floor(y / CHUNK_SIZE);
+        const chunkHash = hash(chunkX, chunkY);
+        
+        const localX = mod(x, CHUNK_SIZE);
+        const localY = mod(y, CHUNK_SIZE);
+        const centerX = 5.5; 
+
+        // ZONAS NORMALES (95%)
+        if (chunkHash < 0.12) {
+            if (localX === 0 || localX === CHUNK_SIZE - 1 || localY === 0 || localY === CHUNK_SIZE - 1) {
+                if (Math.abs(localX - centerX) < 1 || Math.abs(localY - centerX) < 1) return 0; return 1; 
+            }
+            if ((localX >= 4 && localX <= 7 && localY >= 4 && localY <= 7)) return (h > 0.3) ? 7 : 0; 
+            return 0; 
+        } 
+        else if (chunkHash < 0.24) return (mod(localX, 3) === 0 || mod(localY, 3) === 0) ? ((h > 0.75) ? 0 : 2) : 0;
+        else if (chunkHash < 0.36) {
+            if (localX === 0 || localX === CHUNK_SIZE - 1 || localY === 0 || localY === CHUNK_SIZE - 1) {
+                if ((localX <= 2 || localX >= CHUNK_SIZE - 3) && (localY <= 2 || localY >= CHUNK_SIZE - 3)) return 0; return 3; 
+            }
+            if (mod(localX, 2) === 1 && mod(localY, 2) === 1) return 4; 
+            return 0;
+        }
+        else if (chunkHash < 0.48) {
+            if (localX === 0 || localX === CHUNK_SIZE - 1 || localY === 0 || localY === CHUNK_SIZE - 1) {
+                if (Math.abs(localX - centerX) < 2 || Math.abs(localY - centerX) < 2) return 0; return 6; 
+            }
+            if (Math.abs(localX - centerX) < 1.5 && Math.abs(localY - centerX) < 1.5) return (h > 0.5) ? 0 : 5; 
+            return 0;
+        }
+        else if (chunkHash < 0.60) return (mod(localX, 2) === 0 && mod(localY, 2) === 0) ? ((h > 0.3) ? 7 : 0) : 0;
+        else if (chunkHash < 0.72) {
+            const dist = Math.abs(localX - centerX) + Math.abs(localY - centerX);
+            if (dist > 4.5 && dist < 7) { 
+                if (Math.abs(localX - centerX) < 1 || Math.abs(localY - centerX) < 1) return 0; return 6; 
+            }
+            if (dist < 1.5) return 3; 
+            return 0;
+        }
+        else if (chunkHash < 0.84) {
+            if ((localY >= 3 && localY <= 4) || (localY >= 7 && localY <= 8)) {
+                if (localX > 2 && localX < 9) return 0; return 3; 
+            }
+            return 0;
+        }
+        else if (chunkHash < 0.95) return (localX === 0 || localX === CHUNK_SIZE - 1 || localY === 0 || localY === CHUNK_SIZE - 1) ? ((h > 0.5) ? 0 : 5) : 0;
+        
+        // ZONAS SURREALISTAS (5% oculto)
+        else if (chunkHash < 0.96) return (h > 0.8) ? 8 : 0; // Vaporwave
+        else if (chunkHash < 0.97) return (Math.sin(localX) + Math.cos(localY) > 0.5) ? 9 : 0; // Carne
+        else if (chunkHash < 0.98) return (h > 0.6) ? 10 : 0; // Matrix
+        else if (chunkHash < 0.99) return (mod(localX, 4) === 0 && mod(localY, 4) === 0) ? 11 : 0; // Vacío
+        else {
+            if (localX === 0 || localX === CHUNK_SIZE - 1 || localY === 0 || localY === CHUNK_SIZE - 1) {
+                if (Math.abs(localX - centerX) < 1 || Math.abs(localY - centerX) < 1) return 0;
+                return 12; // Estroboscópico
+            }
+            if (localX === localY || localX === CHUNK_SIZE - localY) return (h > 0.5) ? 0 : 12;
+            return 0;
+        }
+    }
+
+    // EFECTO DE SONIDO METÁLICO ATERRADOR (Jumpscare modificado)
+    function playMetalClang() {
+        try {
+            let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Oscilador 1: Un chirrido agudo que cae rápidamente (Sierras)
+            let osc1 = audioCtx.createOscillator();
+            osc1.type = 'sawtooth';
+            osc1.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc1.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + 1.5);
+            
+            // Oscilador 2: Ruido metálico disonante y grueso (Cuadrado)
+            let osc2 = audioCtx.createOscillator();
+            osc2.type = 'square';
+            osc2.frequency.setValueAtTime(333, audioCtx.currentTime);
+            osc2.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 1.5);
+
+            // Oscilador 3: Un retumbar grave y monstruoso (Sierra)
+            let osc3 = audioCtx.createOscillator();
+            osc3.type = 'sawtooth';
+            osc3.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc3.frequency.exponentialRampToValueAtTime(5, audioCtx.currentTime + 1.5);
+            
+            // Nodo de volumen (Muy alto al principio, bajando a 0 en 1.5 segundos)
+            let gainNode = audioCtx.createGain();
+            gainNode.gain.setValueAtTime(2.5, audioCtx.currentTime); // Volumen alto para el susto
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.5);
+            
+            // Conectar todo
+            osc1.connect(gainNode);
+            osc2.connect(gainNode);
+            osc3.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            // Iniciar y detener
+            osc1.start(); osc2.start(); osc3.start();
+            osc1.stop(audioCtx.currentTime + 1.5);
+            osc2.stop(audioCtx.currentTime + 1.5);
+            osc3.stop(audioCtx.currentTime + 1.5);
+        } catch(e) { console.log("Audio API bloqueada"); }
+    }
+
+    function initDarkRealm() {
+        gameState = 'dark_realm';
+        distanceHud.style.display = 'none';
+        
+        // Generar 20 sombras humanoides aleatorias alrededor del jugador
+        shadows = [];
+        for (let i = 0; i < 20; i++) {
+            shadows.push({
+                type: 'shadow',
+                x: playerX + (Math.random() - 0.5) * 40,
+                y: playerY + (Math.random() - 0.5) * 40,
+                speed: walkSpeed * (0.4 + Math.random() * 0.4) // Velocidades variables
+            });
+        }
+    }
+
+    function resetGame() {
+        gameState = 'maze';
+        framesAlive = 0;
+        stalker.active = false;
+        distanceHud.style.display = 'none';
+        shadows = [];
+        stamina = maxStamina;
+        
+        // Volver al inicio
+        playerX = spawnX;
+        playerY = spawnY;
+    }
+
+    canvas.addEventListener('click', async () => { if (!document.pointerLockElement) await canvas.requestPointerLock(); });
+    document.addEventListener('pointerlockchange', () => { overlay.style.display = (document.pointerLockElement === canvas) ? 'none' : 'flex'; });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (document.pointerLockElement === canvas) {
+            let rot = -e.movementX * mouseSensitivity;
+            const oldDirX = dirX;
+            dirX = dirX * Math.cos(rot) - dirY * Math.sin(rot);
+            dirY = oldDirX * Math.sin(rot) + dirY * Math.cos(rot);
+            const oldPlaneX = planeX;
+            planeX = planeX * Math.cos(rot) - planeY * Math.sin(rot);
+            planeY = oldPlaneX * Math.sin(rot) + planeY * Math.cos(rot);
+        }
+    });
+
+    const keys = { w: false, a: false, s: false, d: false, shift: false };
+    window.addEventListener('keydown', (e) => { if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; });
+    window.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
+
+    function update() {
+        if (gameState === 'maze') {
+            framesAlive++;
+            
+            // ACTIVAR LA ENTIDAD A LOS 120 SEGUNDOS (7200 frames)
+            if (framesAlive > stalkerTriggerFrame && !stalker.active) {
+                stalker.active = true;
+                // Spawnea a 15 unidades de distancia, a espaldas del jugador
+                stalker.x = playerX - dirX * 15;
+                stalker.y = playerY - dirY * 15;
+                distanceHud.style.display = 'block';
+            }
+
+            if (stalker.active) {
+                // Perseguir al jugador (ignora muros para ser implacable)
+                let dx = playerX - stalker.x;
+                let dy = playerY - stalker.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                
+                if (dist > 0) {
+                    stalker.x += (dx / dist) * stalker.speed;
+                    stalker.y += (dy / dist) * stalker.speed;
+                }
+
+                // Actualizar HUD
+                distValue.innerText = dist.toFixed(1);
+
+                // Si te atrapa
+                if (dist < 0.6) {
+                    playMetalClang();
+                    initDarkRealm();
+                }
+            }
+        } 
+        else if (gameState === 'dark_realm') {
+            // Actualizar sombras humanoides
+            for (let s of shadows) {
+                let dx = playerX - s.x;
+                let dy = playerY - s.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                
+                if (dist > 0) {
+                    s.x += (dx / dist) * s.speed;
+                    s.y += (dy / dist) * s.speed;
+                }
+
+                // Si una sombra te toca
+                if (dist < 0.5) {
+                    deathAudio.play().catch(e => console.log("Reproducción de audio bloqueada por el navegador"));
+                    resetGame();
+                    return;
+                }
+            }
+        }
+
+        // --- MOVIMIENTO DEL JUGADOR ---
+        const isMoving = keys.w || keys.s || keys.a || keys.d;
+
+        if (keys.shift && isMoving && stamina > 0) {
+            currentSpeed = runSpeed; stamina -= 0.15; 
+        } else {
+            currentSpeed = walkSpeed; if (stamina < maxStamina) stamina += 0.05; // Estamina lenta
+        }
+        
+        if (stamina < 0) stamina = 0; if (stamina > maxStamina) stamina = maxStamina;
+
+        staminaFill.style.width = `${stamina}%`;
+        if (stamina > 50) staminaFill.style.background = '#00FF00'; 
+        else if (stamina > 20) staminaFill.style.background = '#FFFF00'; 
+        else staminaFill.style.background = '#FF0000'; 
+
+        if (keys.w) {
+            if (getMapBlock(Math.floor(playerX + dirX * currentSpeed * 2.5), Math.floor(playerY)) === 0) playerX += dirX * currentSpeed;
+            if (getMapBlock(Math.floor(playerX), Math.floor(playerY + dirY * currentSpeed * 2.5)) === 0) playerY += dirY * currentSpeed;
+        }
+        if (keys.s) {
+            if (getMapBlock(Math.floor(playerX - dirX * currentSpeed * 2.5), Math.floor(playerY)) === 0) playerX -= dirX * currentSpeed;
+            if (getMapBlock(Math.floor(playerX), Math.floor(playerY - dirY * currentSpeed * 2.5)) === 0) playerY -= dirY * currentSpeed;
+        }
+
+        let strafeX = dirY; let strafeY = -dirX;
+
+        if (keys.d) {
+            if (getMapBlock(Math.floor(playerX + strafeX * currentSpeed * 2.5), Math.floor(playerY)) === 0) playerX += strafeX * currentSpeed;
+            if (getMapBlock(Math.floor(playerX), Math.floor(playerY + strafeY * currentSpeed * 2.5)) === 0) playerY += strafeY * currentSpeed;
+        }
+        if (keys.a) {
+            if (getMapBlock(Math.floor(playerX - strafeX * currentSpeed * 2.5), Math.floor(playerY)) === 0) playerX -= strafeX * currentSpeed;
+            if (getMapBlock(Math.floor(playerX), Math.floor(playerY - strafeY * currentSpeed * 2.5)) === 0) playerY -= strafeY * currentSpeed;
+        }
+    }
+
+    // --- RENDERIZADO DE SPRITES (Entidad Negra / Sombras) ---
+    function drawSprites(spritesToDraw, w, h) {
+        // Calcular distancia de cada sprite al jugador
+        for (let i = 0; i < spritesToDraw.length; i++) {
+            spritesToDraw[i].dist = (playerX - spritesToDraw[i].x) ** 2 + (playerY - spritesToDraw[i].y) ** 2;
+        }
+        // Ordenar de más lejos a más cerca
+        spritesToDraw.sort((a, b) => b.dist - a.dist);
+
+        for (let i = 0; i < spritesToDraw.length; i++) {
+            let s = spritesToDraw[i];
+            
+            // Traducir la posición del sprite respecto al jugador
+            let spriteX = s.x - playerX;
+            let spriteY = s.y - playerY;
+
+            // Transformar con la matriz inversa de la cámara
+            let invDet = 1.0 / (planeX * dirY - dirX * planeY);
+            let transformX = invDet * (dirY * spriteX - dirX * spriteY);
+            let transformY = invDet * (-planeY * spriteX + planeX * spriteY); 
+
+            if (transformY > 0.1) { // Si está frente a la cámara
+                let spriteScreenX = Math.floor((w / 2) * (1 + transformX / transformY));
+                
+                // Escala de altura del sprite
+                let sHeight = Math.abs(Math.floor(h / transformY));
+                if (s.type === 'stalker') sHeight *= 1.2; // La entidad es más alta
+                
+                let drawStartY = Math.floor(-sHeight / 2 + h / 2);
+                let originalDrawStartY = drawStartY;
+                if (drawStartY < 0) drawStartY = 0;
+                
+                let drawEndY = Math.floor(sHeight / 2 + h / 2);
+                let originalDrawEndY = drawEndY;
+                if (drawEndY >= h) drawEndY = h - 1;
+
+                // Ancho del sprite
+                let sWidth = sHeight / (s.type === 'stalker' ? 1.5 : 2);
+                let drawStartX = Math.floor(-sWidth / 2 + spriteScreenX);
+                let drawEndX = Math.floor(sWidth / 2 + spriteScreenX);
+
+                for (let stripe = drawStartX; stripe < drawEndX; stripe += 2) {
+                    if (stripe >= 0 && stripe < w && transformY < zBuffer[stripe]) {
+                        
+                        let isArm = false;
+                        if (s.type === 'stalker') {
+                            // Los brazos largos están en los extremos del cuerpo
+                            if (stripe < drawStartX + sWidth * 0.2 || stripe > drawEndX - sWidth * 0.2) {
+                                isArm = true;
+                            }
+                        }
+
+                        let fadeAlpha = 1;
+                        if (gameState === 'dark_realm') {
+                            // Las sombras se desvanecen en la oscuridad
+                            fadeAlpha = Math.max(0, 1 - transformY/8); 
+                        }
+
+                        ctx.fillStyle = s.type === 'stalker' ? "#000" : `rgba(15,15,15,${fadeAlpha})`;
+                        
+                        // Dibujar cuerpo principal
+                        ctx.fillRect(stripe, drawStartY, 2, drawEndY - drawStartY);
+                        
+                        // Dibujar brazos arrastrándose (sobrepasan el cuerpo hacia abajo)
+                        if (isArm) {
+                            let armExtension = sHeight * 0.4;
+                            let armBottom = originalDrawEndY + armExtension;
+                            if (armBottom >= h) armBottom = h - 1;
+                            if (armBottom > drawEndY) {
+                                ctx.fillRect(stripe, drawEndY, 2, armBottom - drawEndY);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function draw() {
+        const w = canvas.width;
+        const h = canvas.height;
+
+        // Limpiamos la pantalla
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, w, h);
+
+        // RAYCASTER PRINCIPAL (Muros)
+        for (let x = 0; x < w; x += 2) { 
+            let cameraX = 2 * x / w - 1;
+            let rayDirX = dirX + planeX * cameraX;
+            let rayDirY = dirY + planeY * cameraX;
+
+            let mapX = Math.floor(playerX);
+            let mapY = Math.floor(playerY);
+
+            let sideDistX, sideDistY, deltaDistX = Math.abs(1 / rayDirX), deltaDistY = Math.abs(1 / rayDirY), perpWallDist;
+            let stepX, stepY, hit = 0, side, wallType = 0;
+
+            if (rayDirX < 0) { stepX = -1; sideDistX = (playerX - mapX) * deltaDistX; } else { stepX = 1; sideDistX = (mapX + 1.0 - playerX) * deltaDistX; }
+            if (rayDirY < 0) { stepY = -1; sideDistY = (playerY - mapY) * deltaDistY; } else { stepY = 1; sideDistY = (mapY + 1.0 - playerY) * deltaDistY; }
+
+            let maxDepth = (gameState === 'dark_realm') ? 15 : 40; // En la oscuridad no ves muy lejos
+            
+            while (hit === 0 && maxDepth > 0) {
+                if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; } else { sideDistY += deltaDistY; mapY += stepY; side = 1; }
+                wallType = getMapBlock(mapX, mapY);
+                if (wallType > 0) hit = 1;
+                maxDepth--;
+            }
+
+            if (hit === 1) {
+                if (side === 0) perpWallDist = (mapX - playerX + (1 - stepX) / 2) / rayDirX; else perpWallDist = (mapY - playerY + (1 - stepY) / 2) / rayDirY;
+            } else {
+                perpWallDist = 9999; // Infinito si no toca muro
+            }
+
+            // Guardar profundidad en el Z-Buffer para tapar correctamente los sprites
+            zBuffer[x] = perpWallDist;
+            zBuffer[x+1] = perpWallDist;
+
+            if (hit === 1) {
+                let wallX;
+                if (side === 0) wallX = playerY + perpWallDist * rayDirY; else wallX = playerX + perpWallDist * rayDirX;
+                wallX -= Math.floor(wallX);
+
+                let lineHeight = Math.floor(h / perpWallDist);
+                let drawStart = -lineHeight / 2 + h / 2; if (drawStart < 0) drawStart = 0;
+                let drawEnd = lineHeight / 2 + h / 2; if (drawEnd >= h) drawEnd = h - 1;
+
+                // Color base
+                let colorBase;
+                if (gameState === 'dark_realm') {
+                    // Los muros en el reino oscuro son casi invisibles
+                    let alpha = Math.max(0, 1 - perpWallDist/8);
+                    colorBase = `rgba(30, 30, 30, ${alpha})`;
+                    ctx.fillStyle = colorBase;
+                    ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                } 
+                else {
+                    if (wallType === 1) colorBase = "#0000FF";
+                    else if (wallType === 2) colorBase = "#FF00FF";
+                    else if (wallType === 3) colorBase = "#FF0000";
+                    else if (wallType === 4) colorBase = "#FFFFFF";
+                    else if (wallType === 5) colorBase = "#FFFF00";
+                    else if (wallType === 6) colorBase = "#00FF00";
+                    else if (wallType === 7) colorBase = "#FFA500";
+                    else if (wallType === 8) colorBase = "#FFB6C1"; 
+                    else if (wallType === 9) colorBase = "#4A0000"; 
+                    else if (wallType === 10) colorBase = "#000000"; 
+                    else if (wallType === 11) colorBase = "#000000"; 
+                    else if (wallType === 12) colorBase = "#FFFFFF"; 
+                    else colorBase = "#888888"; 
+
+                    ctx.fillStyle = colorBase;
+                    ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+
+                    // Texturas clásicas
+                    if (wallType >= 1 && wallType <= 7) {
+                        ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+                        if ((wallX * 8) % 1 < 0.1) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                        if (wallType % 2 === 0) {
+                            for (let i = 1; i < 5; i++) { 
+                                let yH = drawStart + (drawEnd - drawStart) * (i / 5);
+                                if ((wallX * 4) % 1 < 0.5) ctx.fillRect(x, yH, 2, (drawEnd - drawStart) * 0.1);
+                            }
+                        } else {
+                            for (let i = 1; i < 4; i++) { 
+                                let yH = drawStart + (drawEnd - drawStart) * (i / 4);
+                                ctx.fillRect(x, yH, 2, 4);
+                            }
+                        }
+                    }
+
+                    // Texturas raras (vaporwave, carne, matrix, etc)
+                    if (wallType === 8) {
+                        let movingWall = (wallX + time * 0.005) % 1;
+                        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+                        if (movingWall < 0.3) ctx.fillRect(x, drawStart + lineHeight * 0.2, 2, lineHeight * 0.3);
+                        if (movingWall > 0.6 && movingWall < 0.8) ctx.fillRect(x, drawStart + lineHeight * 0.6, 2, lineHeight * 0.2);
+                        if (wallX > 0.45 && wallX < 0.55) { ctx.fillStyle = "#000"; ctx.fillRect(x, drawStart + lineHeight * 0.4 + Math.sin(time*0.05)*10, 2, lineHeight * 0.2); }
+                    } 
+                    else if (wallType === 9) {
+                        ctx.fillStyle = "#8B0000"; 
+                        if ((wallX * 10 + Math.sin(time*0.1)) % 2 < 0.5) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                        if (wallX > 0.3 && wallX < 0.7) {
+                            let eyeCenter = drawStart + lineHeight * 0.5;
+                            ctx.fillStyle = "#FFF"; ctx.fillRect(x, eyeCenter - lineHeight * 0.15, 2, lineHeight * 0.3);
+                            let pupilOffset = Math.sin(time * 0.1 + mapX) * 0.1;
+                            if (wallX > 0.45 + pupilOffset && wallX < 0.55 + pupilOffset) {
+                                ctx.fillStyle = "#000"; ctx.fillRect(x, eyeCenter - lineHeight * 0.08, 2, lineHeight * 0.16);
+                                ctx.fillStyle = "red"; ctx.fillRect(x, eyeCenter - lineHeight * 0.02, 2, lineHeight * 0.04);
+                            }
+                        }
+                    }
+                    else if (wallType === 10) {
+                        ctx.fillStyle = "#00FF00";
+                        for (let yG = drawStart; yG < drawEnd; yG += (drawEnd - drawStart) / 10) {
+                            if (Math.random() > 0.5) ctx.fillRect(x, yG, 2, (drawEnd - drawStart) / 10);
+                        }
+                    }
+                    else if (wallType === 11) {
+                        let dripHeight = 0.3 + 0.5 * Math.sin(wallX * 20 + mapX);
+                        let animatedDrip = (time * 0.02 + dripHeight) % 1;
+                        ctx.fillStyle = "#AA0000";
+                        ctx.fillRect(x, drawStart, 2, lineHeight * animatedDrip);
+                    }
+                    else if (wallType === 12) {
+                        ctx.fillStyle = "#000";
+                        if ((wallX * 15) % 2 < 1) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                        ctx.fillStyle = (Math.sin(time*0.2) > 0) ? "#FFF" : "#000";
+                        ctx.fillRect(x, drawStart + lineHeight * 0.5, 2, lineHeight * 0.05);
+                    }
+
+                    if (side === 1 && wallType !== 10 && wallType !== 12) {
+                        ctx.fillStyle = "rgba(0,0,0,0.4)";
+                        ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                    }
+                }
+
+                // DIBUJADO DE PISO Y TECHO 
+                let floorXWall, floorYWall;
+                if (side === 0 && rayDirX > 0) { floorXWall = mapX; floorYWall = mapY + wallX; }
+                else if (side === 0 && rayDirX < 0) { floorXWall = mapX + 1.0; floorYWall = mapY + wallX; }
+                else if (side === 1 && rayDirY > 0) { floorXWall = mapX + wallX; floorYWall = mapY; }
+                else { floorXWall = mapX + wallX; floorYWall = mapY + 1.0; }
+
+                let drawEndActual = drawEnd;
+                if (drawEndActual < 0) drawEndActual = h; 
+
+                for (let y = drawEndActual + 1; y < h; y += 3) {
+                    let currentDist = h / (2.0 * y - h);
+                    
+                    if (gameState === 'dark_realm') {
+                        // Piso oscuro fading en el Reino Oscuro
+                        let alpha = Math.max(0, 1 - currentDist/8);
+                        ctx.fillStyle = `rgba(15, 15, 15, ${alpha})`;
+                        ctx.fillRect(x, y, 2, 3);
+                        ctx.fillRect(x, h - y - 3, 2, 3); // Techo
+                    } else {
+                        let weight = currentDist / perpWallDist;
+                        let currentFloorX = weight * floorXWall + (1.0 - weight) * playerX;
+                        let currentFloorY = weight * floorYWall + (1.0 - weight) * playerY;
+                        
+                        let checker = (Math.floor(currentFloorX * 4) + Math.floor(currentFloorY * 4)) % 2 === 0;
+                        
+                        ctx.fillStyle = checker ? "#444" : "#111";
+                        ctx.fillRect(x, y, 2, 3);
+                        ctx.fillStyle = checker ? "#112" : "#001";
+                        ctx.fillRect(x, h - y - 3, 2, 3);
+                    }
+                }
+            }
+        }
+
+        // ================= DIBUJAR SPRITES (Entidades) =================
+        let spritesToDraw = [];
+        if (gameState === 'maze' && stalker.active) {
+            spritesToDraw.push({type: 'stalker', x: stalker.x, y: stalker.y});
+        } 
+        else if (gameState === 'dark_realm') {
+            for (let s of shadows) spritesToDraw.push(s);
+        }
+
+        if (spritesToDraw.length > 0) {
+            drawSprites(spritesToDraw, w, h);
+        }
+
+        // ================= EFECTO DE LINTERNA (Reino Oscuro) =================
+        if (gameState === 'dark_realm') {
+            // Un gradiente radial en el centro simulando una linterna o niebla negra densa
+            let gradient = ctx.createRadialGradient(w/2, h/2, 10, w/2, h/2, h/1.2);
+            gradient.addColorStop(0, "rgba(0,0,0,0)");
+            gradient.addColorStop(1, "rgba(0,0,0,0.98)");
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, w, h);
+        }
+    }
+
+    function gameLoop() {
+        time++; 
+        if (document.pointerLockElement === canvas) update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+    
+    gameLoop();
+</script>
+</body>
+</html>
