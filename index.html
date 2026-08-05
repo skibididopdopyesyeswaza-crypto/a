@@ -172,14 +172,17 @@
     // CONFIGURACIÓN DE AUDIO EXTERNO
     const deathAudio = new Audio('jijijijaa.mp3'); 
     const mainEntityAudio = new Audio('queque.mp3'); 
+    const rayoAudio = new Audio('rayopollito.mp3'); // <- NUEVO AUDIO
 
     // CONFIGURACIÓN DE IMÁGENES
     const stalkerImg = new Image();
-    stalkerImg.src = 'monstruo.png'; // <- EL MONSTRUO PRINCIPAL
+    stalkerImg.src = 'monstruo.png'; 
 
     const shadowImg = new Image();
-    // AQUI ESTÁN LAS FIGURAS DEL OTRO MUNDO
     shadowImg.src = 'miniqueque.png'; 
+
+    const rayoImg = new Image();
+    rayoImg.src = 'rayoxd.png';
 
     let spawnX = Math.floor(Math.random() * 200 - 100) + 0.5;
     let spawnY = Math.floor(Math.random() * 200 - 100) + 0.5;
@@ -308,6 +311,7 @@
         gameState = 'maze';
         framesAlive = 0;
         stalker.active = false;
+        stalker.speed = walkSpeed * 0.75; 
         distanceHud.style.display = 'none';
         shadows = [];
         stamina = maxStamina;
@@ -351,6 +355,8 @@
                 let dy = playerY - stalker.y;
                 let dist = Math.sqrt(dx*dx + dy*dy);
                 
+                stalker.speed += 0.00005; 
+
                 if (dist > 0) {
                     stalker.x += (dx / dist) * stalker.speed;
                     stalker.y += (dy / dist) * stalker.speed;
@@ -363,6 +369,38 @@
                     initDarkRealm();
                 }
             }
+
+            // --- SISTEMA DETECCIÓN DE TOQUE DE MURO SORPRESA ---
+            let pX = Math.floor(playerX);
+            let pY = Math.floor(playerY);
+            let touchedRayo = false;
+
+            // Revisamos los bloques cercanos al jugador (un radio de 1 bloque)
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    let cX = pX + dx;
+                    let cY = pY + dy;
+                    if (getMapBlock(cX, cY) > 0) {
+                        let isRayoWall = (hash(cX + 7.77, cY + 3.33) > 0.95);
+                        if (isRayoWall) {
+                            // Calcula la distancia desde el jugador a la pared más cercana del bloque
+                            let distX = Math.max(cX, Math.min(playerX, cX + 1)) - playerX;
+                            let distY = Math.max(cY, Math.min(playerY, cY + 1)) - playerY;
+                            let distance = Math.sqrt(distX * distX + distY * distY);
+                            
+                            if (distance < 0.4) { 
+                                touchedRayo = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (touchedRayo) {
+                if (rayoAudio.paused || rayoAudio.ended) {
+                    rayoAudio.play().catch(e => console.log("Audio bloqueado"));
+                }
+            }
         } 
         else if (gameState === 'dark_realm') {
             for (let s of shadows) {
@@ -370,6 +408,8 @@
                 let dy = playerY - s.y;
                 let dist = Math.sqrt(dx*dx + dy*dy);
                 
+                s.speed += 0.00005;
+
                 if (dist > 0) {
                     s.x += (dx / dist) * s.speed;
                     s.y += (dy / dist) * s.speed;
@@ -543,81 +583,100 @@
                     ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
                 } 
                 else {
-                    if (wallType === 1) colorBase = "#0000FF";
-                    else if (wallType === 2) colorBase = "#FF00FF";
-                    else if (wallType === 3) colorBase = "#FF0000";
-                    else if (wallType === 4) colorBase = "#FFFFFF";
-                    else if (wallType === 5) colorBase = "#FFFF00";
-                    else if (wallType === 6) colorBase = "#00FF00";
-                    else if (wallType === 7) colorBase = "#FFA500";
-                    else if (wallType === 8) colorBase = "#FFB6C1"; 
-                    else if (wallType === 9) colorBase = "#4A0000"; 
-                    else if (wallType === 10) colorBase = "#000000"; 
-                    else if (wallType === 11) colorBase = "#000000"; 
-                    else if (wallType === 12) colorBase = "#FFFFFF"; 
-                    else colorBase = "#888888"; 
+                    let isRayoWall = (hash(mapX + 7.77, mapY + 3.33) > 0.95);
 
-                    ctx.fillStyle = colorBase;
-                    ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                    if (isRayoWall && rayoImg.complete && rayoImg.naturalWidth !== 0) {
+                        let texX = Math.floor(wallX * rayoImg.width);
+                        if(texX < 0) texX = 0;
+                        if(texX >= rayoImg.width) texX = rayoImg.width - 1;
 
-                    if (wallType >= 1 && wallType <= 7) {
-                        ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
-                        if ((wallX * 8) % 1 < 0.1) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
-                        if (wallType % 2 === 0) {
-                            for (let i = 1; i < 5; i++) { 
-                                let yH = drawStart + (drawEnd - drawStart) * (i / 5);
-                                if ((wallX * 4) % 1 < 0.5) ctx.fillRect(x, yH, 2, (drawEnd - drawStart) * 0.1);
-                            }
-                        } else {
-                            for (let i = 1; i < 4; i++) { 
-                                let yH = drawStart + (drawEnd - drawStart) * (i / 4);
-                                ctx.fillRect(x, yH, 2, 4);
-                            }
+                        ctx.drawImage(
+                            rayoImg, 
+                            texX, 0, 1, rayoImg.height, 
+                            x, drawStart, 2, drawEnd - drawStart
+                        );
+
+                        if (side === 1) {
+                            ctx.fillStyle = "rgba(0,0,0,0.4)";
+                            ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
                         }
-                    }
+                    } else {
+                        if (wallType === 1) colorBase = "#0000FF";
+                        else if (wallType === 2) colorBase = "#FF00FF";
+                        else if (wallType === 3) colorBase = "#FF0000";
+                        else if (wallType === 4) colorBase = "#FFFFFF";
+                        else if (wallType === 5) colorBase = "#FFFF00";
+                        else if (wallType === 6) colorBase = "#00FF00";
+                        else if (wallType === 7) colorBase = "#FFA500";
+                        else if (wallType === 8) colorBase = "#FFB6C1"; 
+                        else if (wallType === 9) colorBase = "#4A0000"; 
+                        else if (wallType === 10) colorBase = "#000000"; 
+                        else if (wallType === 11) colorBase = "#000000"; 
+                        else if (wallType === 12) colorBase = "#FFFFFF"; 
+                        else colorBase = "#888888"; 
 
-                    if (wallType === 8) {
-                        let movingWall = (wallX + time * 0.005) % 1;
-                        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-                        if (movingWall < 0.3) ctx.fillRect(x, drawStart + lineHeight * 0.2, 2, lineHeight * 0.3);
-                        if (movingWall > 0.6 && movingWall < 0.8) ctx.fillRect(x, drawStart + lineHeight * 0.6, 2, lineHeight * 0.2);
-                        if (wallX > 0.45 && wallX < 0.55) { ctx.fillStyle = "#000"; ctx.fillRect(x, drawStart + lineHeight * 0.4 + Math.sin(time*0.05)*10, 2, lineHeight * 0.2); }
-                    } 
-                    else if (wallType === 9) {
-                        ctx.fillStyle = "#8B0000"; 
-                        if ((wallX * 10 + Math.sin(time*0.1)) % 2 < 0.5) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
-                        if (wallX > 0.3 && wallX < 0.7) {
-                            let eyeCenter = drawStart + lineHeight * 0.5;
-                            ctx.fillStyle = "#FFF"; ctx.fillRect(x, eyeCenter - lineHeight * 0.15, 2, lineHeight * 0.3);
-                            let pupilOffset = Math.sin(time * 0.1 + mapX) * 0.1;
-                            if (wallX > 0.45 + pupilOffset && wallX < 0.55 + pupilOffset) {
-                                ctx.fillStyle = "#000"; ctx.fillRect(x, eyeCenter - lineHeight * 0.08, 2, lineHeight * 0.16);
-                                ctx.fillStyle = "red"; ctx.fillRect(x, eyeCenter - lineHeight * 0.02, 2, lineHeight * 0.04);
-                            }
-                        }
-                    }
-                    else if (wallType === 10) {
-                        ctx.fillStyle = "#00FF00";
-                        for (let yG = drawStart; yG < drawEnd; yG += (drawEnd - drawStart) / 10) {
-                            if (Math.random() > 0.5) ctx.fillRect(x, yG, 2, (drawEnd - drawStart) / 10);
-                        }
-                    }
-                    else if (wallType === 11) {
-                        let dripHeight = 0.3 + 0.5 * Math.sin(wallX * 20 + mapX);
-                        let animatedDrip = (time * 0.02 + dripHeight) % 1;
-                        ctx.fillStyle = "#AA0000";
-                        ctx.fillRect(x, drawStart, 2, lineHeight * animatedDrip);
-                    }
-                    else if (wallType === 12) {
-                        ctx.fillStyle = "#000";
-                        if ((wallX * 15) % 2 < 1) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
-                        ctx.fillStyle = (Math.sin(time*0.2) > 0) ? "#FFF" : "#000";
-                        ctx.fillRect(x, drawStart + lineHeight * 0.5, 2, lineHeight * 0.05);
-                    }
-
-                    if (side === 1 && wallType !== 10 && wallType !== 12) {
-                        ctx.fillStyle = "rgba(0,0,0,0.4)";
+                        ctx.fillStyle = colorBase;
                         ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+
+                        if (wallType >= 1 && wallType <= 7) {
+                            ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+                            if ((wallX * 8) % 1 < 0.1) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                            if (wallType % 2 === 0) {
+                                for (let i = 1; i < 5; i++) { 
+                                    let yH = drawStart + (drawEnd - drawStart) * (i / 5);
+                                    if ((wallX * 4) % 1 < 0.5) ctx.fillRect(x, yH, 2, (drawEnd - drawStart) * 0.1);
+                                }
+                            } else {
+                                for (let i = 1; i < 4; i++) { 
+                                    let yH = drawStart + (drawEnd - drawStart) * (i / 4);
+                                    ctx.fillRect(x, yH, 2, 4);
+                                }
+                            }
+                        }
+
+                        if (wallType === 8) {
+                            let movingWall = (wallX + time * 0.005) % 1;
+                            ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+                            if (movingWall < 0.3) ctx.fillRect(x, drawStart + lineHeight * 0.2, 2, lineHeight * 0.3);
+                            if (movingWall > 0.6 && movingWall < 0.8) ctx.fillRect(x, drawStart + lineHeight * 0.6, 2, lineHeight * 0.2);
+                            if (wallX > 0.45 && wallX < 0.55) { ctx.fillStyle = "#000"; ctx.fillRect(x, drawStart + lineHeight * 0.4 + Math.sin(time*0.05)*10, 2, lineHeight * 0.2); }
+                        } 
+                        else if (wallType === 9) {
+                            ctx.fillStyle = "#8B0000"; 
+                            if ((wallX * 10 + Math.sin(time*0.1)) % 2 < 0.5) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                            if (wallX > 0.3 && wallX < 0.7) {
+                                let eyeCenter = drawStart + lineHeight * 0.5;
+                                ctx.fillStyle = "#FFF"; ctx.fillRect(x, eyeCenter - lineHeight * 0.15, 2, lineHeight * 0.3);
+                                let pupilOffset = Math.sin(time * 0.1 + mapX) * 0.1;
+                                if (wallX > 0.45 + pupilOffset && wallX < 0.55 + pupilOffset) {
+                                    ctx.fillStyle = "#000"; ctx.fillRect(x, eyeCenter - lineHeight * 0.08, 2, lineHeight * 0.16);
+                                    ctx.fillStyle = "red"; ctx.fillRect(x, eyeCenter - lineHeight * 0.02, 2, lineHeight * 0.04);
+                                }
+                            }
+                        }
+                        else if (wallType === 10) {
+                            ctx.fillStyle = "#00FF00";
+                            for (let yG = drawStart; yG < drawEnd; yG += (drawEnd - drawStart) / 10) {
+                                if (Math.random() > 0.5) ctx.fillRect(x, yG, 2, (drawEnd - drawStart) / 10);
+                            }
+                        }
+                        else if (wallType === 11) {
+                            let dripHeight = 0.3 + 0.5 * Math.sin(wallX * 20 + mapX);
+                            let animatedDrip = (time * 0.02 + dripHeight) % 1;
+                            ctx.fillStyle = "#AA0000";
+                            ctx.fillRect(x, drawStart, 2, lineHeight * animatedDrip);
+                        }
+                        else if (wallType === 12) {
+                            ctx.fillStyle = "#000";
+                            if ((wallX * 15) % 2 < 1) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                            ctx.fillStyle = (Math.sin(time*0.2) > 0) ? "#FFF" : "#000";
+                            ctx.fillRect(x, drawStart + lineHeight * 0.5, 2, lineHeight * 0.05);
+                        }
+
+                        if (side === 1 && wallType !== 10 && wallType !== 12) {
+                            ctx.fillStyle = "rgba(0,0,0,0.4)";
+                            ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                        }
                     }
                 }
 
@@ -666,9 +725,7 @@
             drawSprites(spritesToDraw, w, h);
         }
 
-        // --- SISTEMA DE LINTERNA AUTOMÁTICA ---
         if (gameState === 'maze') {
-            // Linterna en el laberinto normal
             let flashlight = ctx.createRadialGradient(w/2, h/2, 20, w/2, h/2, h * 0.9);
             flashlight.addColorStop(0, "rgba(255, 255, 220, 0.0)"); 
             flashlight.addColorStop(0.5, "rgba(0, 0, 0, 0.5)");     
@@ -677,11 +734,10 @@
             ctx.fillStyle = flashlight;
             ctx.fillRect(0, 0, w, h);
         } else if (gameState === 'dark_realm') {
-            // Linterna adaptada para el otro mundo (más visible y clara en el centro)
             let flashlight = ctx.createRadialGradient(w/2, h/2, 10, w/2, h/2, h * 0.85);
-            flashlight.addColorStop(0, "rgba(255, 255, 255, 0.1)"); // Luz blanca suave al centro
-            flashlight.addColorStop(0.4, "rgba(0, 0, 0, 0.6)");     // Sombra media
-            flashlight.addColorStop(1, "rgba(0, 0, 0, 1)");         // Oscuridad total en los bordes
+            flashlight.addColorStop(0, "rgba(255, 255, 255, 0.1)");
+            flashlight.addColorStop(0.4, "rgba(0, 0, 0, 0.6)");     
+            flashlight.addColorStop(1, "rgba(0, 0, 0, 1)");         
             
             ctx.fillStyle = flashlight;
             ctx.fillRect(0, 0, w, h);
