@@ -190,6 +190,7 @@
     const mainEntityAudio = new Audio('queque.mp3'); 
     const rayoAudio = new Audio('rayopollito.mp3');
     const gunAudio = new Audio('pistola.mp3');
+    const bossAngryAudio = new Audio('backroom_entyti_sound.mp3'); // TU NUEVO AUDIO DE AUDACITY
 
     // CONFIGURACIÓN DE IMÁGENES
     const stalkerImg = new Image();
@@ -221,10 +222,10 @@
     let currentSpeed = walkSpeed;
     const mouseSensitivity = 0.003; 
 
-    // SISTEMA DE ESTAMINA ARREGLADO
+    // SISTEMA DE ESTAMINA
     const maxStamina = 100;
     let stamina = maxStamina;
-    let isExhausted = false; // Control de fatiga
+    let isExhausted = false; 
     
     let time = 0; 
     let framesAlive = 0;
@@ -233,19 +234,21 @@
 
     let wasTouchingRayo = false; 
     let shootFrame = 0; 
-    let screenFlash = 0; // Efecto visual de miedo
+    let screenFlash = 0; 
     
     // SISTEMA DE COOLDOWN DEL ARMA
     let gunCooldown = 0;
-    const MAX_COOLDOWN = 330; // 5.5 segundos (a ~60 frames por segundo)
+    const MAX_COOLDOWN = 330; 
 
     // --- ESTADO DE LAS ENTIDADES ---
-    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.75, hp: 100, maxHp: 100, type: 'stalker' }; 
+    // Stalker ahora es más lento (0.35 del walkSpeed en vez de 0.75)
+    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.35, hp: 100, maxHp: 100, type: 'stalker' }; 
     let shadows = []; 
-    // NUEVA ENTIDAD (JEFE) CON 5000 HP
+    // Jefe
     let boss = { active: false, x: 0, y: 0, speed: walkSpeed * 0.5, hp: 5000, maxHp: 5000, type: 'boss', timerAlive: 0, isAngry: false }; 
 
-    let stalkerTriggerFrame = 300; // Lo puse más bajo para pruebas, ajústalo si quieres
+    // TIEMPO DE APARICIÓN DEL STALKER: 90 Segundos (90 * 60 fps = 5400 frames)
+    let stalkerTriggerFrame = 5400; 
 
     const SEED = Math.random() * 10000;
     const mod = (n, m) => ((n % m) + m) % m;
@@ -355,15 +358,14 @@
         playerY = spawnY;
     }
 
-    // --- MECÁNICA DE DISPARO (Añadido Cooldown) ---
+    // --- MECÁNICA DE DISPARO ---
     canvas.addEventListener('click', async () => { 
         if (!document.pointerLockElement) {
             await canvas.requestPointerLock(); 
         } else {
-            // SOLO DISPARA SI NO HAY ANIMACIÓN Y EL COOLDOWN ESTÁ EN CERO
             if (shootFrame === 0 && gunCooldown === 0) {
                 shootFrame = 8; 
-                gunCooldown = MAX_COOLDOWN; // Iniciar cooldown de 5.5 seg
+                gunCooldown = MAX_COOLDOWN; 
                 
                 gunAudio.currentTime = 0; 
                 gunAudio.play().catch(e => console.log("Audio bloqueado"));
@@ -395,19 +397,18 @@
                 if (hitSprite) {
                     hitSprite.hp -= 25; 
                     if (hitSprite.hp <= 0) {
+                        // LA NUEVA ENTIDAD SOLO APARECE SI MATAS AL STALKER PRINCIPAL
                         if (hitSprite.type === 'stalker') {
                             stalker.active = false;
                             
-                            // SPAWN DE LA NUEVA ENTIDAD (JEFE)
                             boss.active = true;
                             boss.hp = boss.maxHp;
-                            boss.x = playerX - dirX * 25; // Aparece más lejos
+                            boss.x = playerX - dirX * 25; 
                             boss.y = playerY - dirY * 25;
                             boss.timerAlive = 0;
                             boss.isAngry = false;
                             boss.speed = walkSpeed * 0.5;
                             
-                            // Efecto de aparición (Oscuridad total)
                             screenFlash = 60; 
                             deathAudio.currentTime = 0;
                             deathAudio.play().catch(e => console.log("Audio bloqueado"));
@@ -432,12 +433,12 @@
     window.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
 
     function update() {
-        if (gameState === 'boss_death') return; // Paralizar actualizaciones físicas si te mató el jefe
+        if (gameState === 'boss_death') return; 
 
         if (shootFrame > 0) shootFrame--; 
         if (screenFlash > 0) screenFlash--;
 
-        // GESTIÓN DEL COOLDOWN DE LA PISTOLA
+        // COOLDOWN DE LA PISTOLA
         if (gunCooldown > 0) {
             gunCooldown--;
             gunFill.style.width = `${((MAX_COOLDOWN - gunCooldown) / MAX_COOLDOWN) * 100}%`;
@@ -452,23 +453,24 @@
         if (gameState === 'maze') {
             framesAlive++;
             
+            // EL STALKER APARECE A LOS 90 SEGUNDOS (5400 frames)
             if (framesAlive > stalkerTriggerFrame && !stalker.active && !boss.active) {
                 stalker.active = true;
                 stalker.x = playerX - dirX * 15; stalker.y = playerY - dirY * 15;
                 distanceHud.style.display = 'block';
             }
 
-            // LÓGICA STALKER NORMAL
+            // LÓGICA STALKER NORMAL (AHORA ES MÁS LENTO)
             if (stalker.active) {
                 let dx = playerX - stalker.x; let dy = playerY - stalker.y;
                 let dist = Math.sqrt(dx*dx + dy*dy);
-                stalker.speed += 0.00005; 
+                stalker.speed += 0.00002; // Aceleración reducida
                 if (dist > 0) { stalker.x += (dx / dist) * stalker.speed; stalker.y += (dy / dist) * stalker.speed; }
                 distValue.innerText = dist.toFixed(1);
 
                 if (dist < 0.6) {
                     mainEntityAudio.play().catch(e => console.log("Audio bloqueado"));
-                    initDarkRealm();
+                    initDarkRealm(); // Si te atrapa, vas al reino oscuro de sombras
                 }
             }
 
@@ -478,13 +480,14 @@
                 let dx = playerX - boss.x; let dy = playerY - boss.y;
                 let dist = Math.sqrt(dx*dx + dy*dy);
                 
-                // EVENTO DE FURIA A LOS 10 SEGUNDOS (600 frames aprox)
+                // EVENTO DE FURIA A LOS 10 SEGUNDOS
                 if (boss.timerAlive === 600) {
                     boss.isAngry = true;
-                    boss.speed = runSpeed * 0.95; // Se vuelve MUY rápido
-                    screenFlash = 30; // Efecto visual
-                    mainEntityAudio.currentTime = 0;
-                    mainEntityAudio.play().catch(e => {}); // Grito perturbador
+                    boss.speed = runSpeed * 0.95; 
+                    screenFlash = 30; 
+                    // REPRODUCE TU SONIDO DE AUDACITY AQUI
+                    bossAngryAudio.currentTime = 0;
+                    bossAngryAudio.play().catch(e => console.log("Audio bloqueado o no encontrado"));
                 }
 
                 if (dist > 0) { 
@@ -495,7 +498,6 @@
                 distValue.innerText = dist.toFixed(1);
 
                 if (dist < 0.8) {
-                    // Muerte fea por el jefe
                     gameState = 'boss_death';
                     deathAudio.currentTime = 0;
                     deathAudio.play().catch(e=>console.log(e));
@@ -540,7 +542,7 @@
             }
         }
 
-        // --- SISTEMA DE ESTAMINA CORREGIDO ---
+        // SISTEMA DE ESTAMINA
         const isMoving = keys.w || keys.s || keys.a || keys.d;
 
         if (stamina <= 0) { 
@@ -554,7 +556,7 @@
 
         if (keys.shift && isMoving && !isExhausted) {
             currentSpeed = runSpeed; 
-            stamina -= 0.3; // Drena un poco más rápido para balance
+            stamina -= 0.3; 
         } else {
             currentSpeed = walkSpeed; 
             if (stamina < maxStamina) stamina += 0.15; 
@@ -564,7 +566,7 @@
 
         staminaFill.style.width = `${stamina}%`;
         if (isExhausted) {
-            staminaFill.style.background = '#8B0000'; // Rojo oscuro de fatiga
+            staminaFill.style.background = '#8B0000'; 
         } else {
             if (stamina > 50) staminaFill.style.background = '#00FF00'; 
             else if (stamina > 20) staminaFill.style.background = '#FFFF00'; 
@@ -608,7 +610,7 @@
                 let sHeight = Math.abs(Math.floor(h / transformY));
                 
                 if (s.type === 'stalker') sHeight = Math.floor(sHeight * 1.2);
-                if (s.type === 'boss') sHeight = Math.floor(sHeight * 1.5); // El jefe es más alto
+                if (s.type === 'boss') sHeight = Math.floor(sHeight * 1.5); 
                 
                 let drawStartY = Math.floor(-sHeight / 2 + h / 2); if (drawStartY < 0) drawStartY = 0;
                 let drawEndY = Math.floor(sHeight / 2 + h / 2); if (drawEndY >= h) drawEndY = h - 1;
@@ -628,7 +630,6 @@
                             let texX = Math.floor((stripe - drawStartX) * currentImg.width / sWidth);
                             let texWidth = Math.max(1, Math.floor(2 * currentImg.width / sWidth));
                             
-                            // Efecto tembloroso si el jefe está furioso
                             let vShake = 0;
                             if (s.type === 'boss' && s.isAngry) {
                                 vShake = (Math.random() - 0.5) * 15;
@@ -654,7 +655,7 @@
                     let barWidth = 30;
                     let hpRatio = s.hp / s.maxHp;
                     ctx.fillStyle = "#FF0000"; ctx.fillRect(spriteScreenX - barWidth/2, drawStartY - 10, barWidth, 4);
-                    ctx.fillStyle = s.type === 'boss' ? "#FF00FF" : "#00FF00"; // Barra magenta para el jefe
+                    ctx.fillStyle = s.type === 'boss' ? "#FF00FF" : "#00FF00"; 
                     ctx.fillRect(spriteScreenX - barWidth/2, drawStartY - 10, barWidth * hpRatio, 4);
                     ctx.fillStyle = "#FFFFFF"; ctx.font = "12px 'VT323', monospace"; ctx.textAlign = "center";
                     ctx.fillText(Math.floor(s.hp) + "/" + s.maxHp, spriteScreenX, drawStartY - 14);
@@ -666,7 +667,6 @@
     function draw() {
         const w = canvas.width; const h = canvas.height;
 
-        // EFECTO DE MUERTE FEA POR EL JEFE
         if (gameState === 'boss_death') {
             let glitchX = (Math.random() - 0.5) * 40;
             let glitchY = (Math.random() - 0.5) * 40;
@@ -675,25 +675,21 @@
                 ctx.drawImage(bossImg, glitchX, glitchY, w + Math.random()*50, h + Math.random()*50);
             }
             
-            // Colores invertidos / saturados y sangrientos al azar
             ctx.globalCompositeOperation = "difference";
             ctx.fillStyle = Math.random() > 0.5 ? "rgba(255, 0, 0, 1)" : "rgba(255, 255, 255, 1)";
             ctx.fillRect(0, 0, w, h);
             ctx.globalCompositeOperation = "source-over";
 
-            // Ruido de estática
             for(let i = 0; i < 25; i++) {
                 ctx.fillStyle = Math.random() > 0.5 ? "#FFF" : "#000";
                 ctx.fillRect(Math.random()*w, Math.random()*h, Math.random()*w, Math.random()*10);
             }
             
-            // Botón falso de reseteo para atrapar al jugador
             ctx.fillStyle = "white";
             ctx.font = "40px 'VT323', monospace";
             ctx.textAlign = "center";
             ctx.fillText("ESTÁS MUERTO", w/2, h/2 + Math.random()*10);
             
-            // Recargar página después de un ratito
             if (time % 200 === 199) location.reload();
             return; 
         }
@@ -798,7 +794,6 @@
         }
         if (spritesToDraw.length > 0) drawSprites(spritesToDraw, w, h);
 
-        // Flash de pantalla (Oscuridad o sangre)
         if (screenFlash > 0) {
             ctx.fillStyle = `rgba(0, 0, 0, ${screenFlash / 60})`;
             ctx.fillRect(0, 0, w, h);
@@ -819,7 +814,7 @@
         ctx.fillStyle = "#555555"; ctx.fillRect(w/2 - 5, h - 70 + gunOffset, 10, 20);
         if (shootFrame > 4) { ctx.fillStyle = "#FFFF00"; ctx.beginPath(); ctx.arc(w/2, h - 75 + gunOffset, 12 + Math.random()*8, 0, Math.PI*2); ctx.fill(); }
 
-        ctx.fillStyle = gunCooldown > 0 ? "rgba(255, 0, 0, 0.6)" : "rgba(0, 255, 0, 0.6)"; // Mira roja si estás recargando
+        ctx.fillStyle = gunCooldown > 0 ? "rgba(255, 0, 0, 0.6)" : "rgba(0, 255, 0, 0.6)"; 
         ctx.fillRect(w/2 - 1, h/2 - 4, 2, 8); ctx.fillRect(w/2 - 4, h/2 - 1, 8, 2);
     }
 
