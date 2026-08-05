@@ -242,10 +242,10 @@
 
     // --- ESTADO DE LAS ENTIDADES ---
     // Stalker ahora es más lento (0.35 del walkSpeed en vez de 0.75)
-    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.005, hp: 125, maxHp: 125, type: 'stalker' }; 
+    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.0005, hp: 150, maxHp: 150, type: 'stalker' }; 
     let shadows = []; 
     // Jefe
-    let boss = { active: false, x: 0, y: 0, speed: walkSpeed * 0.5, hp: 5000, maxHp: 5000, type: 'boss', timerAlive: 0, isAngry: false }; 
+    let boss = { active: false, x: 0, y: 0, speed: walkSpeed * 0.05, hp: 5000, maxHp: 5000, type: 'boss', timerAlive: 0, isAngry: false }; 
 
     // TIEMPO DE APARICIÓN DEL STALKER: 90 Segundos (90 * 60 fps = 5400 frames)
     let stalkerTriggerFrame = 5400; 
@@ -395,7 +395,7 @@
                 }
 
                 if (hitSprite) {
-                    hitSprite.hp -= 25; 
+                    hitSprite.hp -= 50; 
                     if (hitSprite.hp <= 0) {
                         // LA NUEVA ENTIDAD SOLO APARECE SI MATAS AL STALKER PRINCIPAL
                         if (hitSprite.type === 'stalker') {
