@@ -171,12 +171,15 @@
     const distValue = document.getElementById('dist-value');
 
     // CONFIGURACIÓN DE AUDIO EXTERNO
-    const deathAudio = new Audio('jijijijaa.mp3'); // Para el reino oscuro
-    const mainEntityAudio = new Audio('queque.mp3'); // Para la entidad principal
+    const deathAudio = new Audio('queque.mp3'); 
+    const mainEntityAudio = new Audio('jijijijaa.mp3'); 
 
-    // CONFIGURACIÓN DE IMAGEN DEL MONSTRUO
+    // CONFIGURACIÓN DE IMÁGENES
     const stalkerImg = new Image();
-    stalkerImg.src = 'miniqueque.png'; 
+    stalkerImg.src = 'monstruo.png'; // <- Cambia esto por el nombre de tu monstruo original
+
+    const shadowImg = new Image();
+    shadowImg.src = 'miniqueque.png'; // Los enemigos de la otra dimensión
 
     let spawnX = Math.floor(Math.random() * 200 - 100) + 0.5;
     let spawnY = Math.floor(Math.random() * 200 - 100) + 0.5;
@@ -198,12 +201,11 @@
     
     let time = 0; 
     let framesAlive = 0;
-    let gameState = 'maze'; // Puede ser 'maze' o 'dark_realm'
+    let gameState = 'maze'; 
     let zBuffer = new Array(canvas.width); 
 
-    // --- ESTADO DE LAS ENTIDADES ---
-    // VELOCIDAD REDUCIDA PARA LA ENTIDAD PRINCIPAL (0.5 en lugar de 0.9)
-    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.5 };
+    // --- ESTADO DE LAS ENTIDADES (MAS LENTAS AÚN) ---
+    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.3 }; // Era 0.5, ahora 0.3
     let shadows = []; 
     let stalkerTriggerFrame = 7200; 
 
@@ -217,7 +219,6 @@
 
     const CHUNK_SIZE = 12; 
 
-    // GENERACIÓN DEL MAPA (Muros)
     function getMapBlock(x, y) {
         if (gameState === 'dark_realm') {
             if (hash(x, y) > 0.95) return 10; 
@@ -298,8 +299,8 @@
                 type: 'shadow',
                 x: playerX + (Math.random() - 0.5) * 40,
                 y: playerY + (Math.random() - 0.5) * 40,
-                // VELOCIDAD REDUCIDA PARA LAS SOMBRAS TAMBIÉN
-                speed: walkSpeed * (0.2 + Math.random() * 0.2) 
+                // Sombras aún más lentas
+                speed: walkSpeed * (0.1 + Math.random() * 0.1) 
             });
         }
     }
@@ -358,7 +359,6 @@
 
                 distValue.innerText = dist.toFixed(1);
 
-                // SI TE ATRAPA LA ENTIDAD PRINCIPAL
                 if (dist < 0.6) {
                     mainEntityAudio.play().catch(e => console.log("Audio bloqueado"));
                     initDarkRealm();
@@ -376,7 +376,6 @@
                     s.y += (dy / dist) * s.speed;
                 }
 
-                // SI TE ATRAPA UNA SOMBRA EN EL REINO OSCURO
                 if (dist < 0.5) {
                     deathAudio.play().catch(e => console.log("Audio bloqueado"));
                     resetGame();
@@ -385,7 +384,6 @@
             }
         }
 
-        // --- MOVIMIENTO DEL JUGADOR ---
         const isMoving = keys.w || keys.s || keys.a || keys.d;
 
         if (keys.shift && isMoving && stamina > 0) {
@@ -442,7 +440,7 @@
                 let spriteScreenX = Math.floor((w / 2) * (1 + transformX / transformY));
                 
                 let sHeight = Math.abs(Math.floor(h / transformY));
-                if (s.type === 'stalker') sHeight *= 1.2; 
+                if (s.type === 'stalker') sHeight = Math.floor(sHeight * 1.2); 
                 
                 let drawStartY = Math.floor(-sHeight / 2 + h / 2);
                 if (drawStartY < 0) drawStartY = 0;
@@ -468,13 +466,22 @@
                                     stripe, drawStartY, 2, drawEndY - drawStartY 
                                 );
                             }
-                        } else {
-                            let fadeAlpha = 1;
-                            if (gameState === 'dark_realm') {
-                                fadeAlpha = Math.max(0, 1 - transformY/8); 
+                        } else if (s.type === 'shadow') {
+                            // DIBUJAR A LOS MINI QUEQUES
+                            if (shadowImg.complete && shadowImg.naturalWidth !== 0) {
+                                let texX = Math.floor((stripe - drawStartX) * shadowImg.width / sWidth);
+                                let texWidth = Math.max(1, Math.floor(2 * shadowImg.width / sWidth));
+                                
+                                if (gameState === 'dark_realm') {
+                                    ctx.globalAlpha = Math.max(0, 1 - transformY/8);
+                                }
+                                ctx.drawImage(
+                                    shadowImg, 
+                                    texX, 0, texWidth, shadowImg.height, 
+                                    stripe, drawStartY, 2, drawEndY - drawStartY 
+                                );
+                                ctx.globalAlpha = 1.0;
                             }
-                            ctx.fillStyle = `rgba(15,15,15,${fadeAlpha})`;
-                            ctx.fillRect(stripe, drawStartY, 2, drawEndY - drawStartY);
                         }
                     }
                 }
@@ -661,12 +668,24 @@
             drawSprites(spritesToDraw, w, h);
         }
 
-        if (gameState === 'dark_realm') {
-            let gradient = ctx.createRadialGradient(w/2, h/2, 10, w/2, h/2, h/1.2);
-            gradient.addColorStop(0, "rgba(0,0,0,0)");
-            gradient.addColorStop(1, "rgba(0,0,0,0.98)");
+        // --- SISTEMA DE LINTERNA AUTOMÁTICA ---
+        if (gameState === 'maze') {
+            // Linterna en el laberinto normal
+            let flashlight = ctx.createRadialGradient(w/2, h/2, 20, w/2, h/2, h * 0.9);
+            flashlight.addColorStop(0, "rgba(255, 255, 220, 0.0)"); // Transparente en el centro
+            flashlight.addColorStop(0.5, "rgba(0, 0, 0, 0.5)");     // Sombra media
+            flashlight.addColorStop(1, "rgba(0, 0, 0, 0.95)");      // Muy oscuro en los bordes
             
-            ctx.fillStyle = gradient;
+            ctx.fillStyle = flashlight;
+            ctx.fillRect(0, 0, w, h);
+        } else if (gameState === 'dark_realm') {
+            // Linterna mucho más débil en el reino oscuro (claustrofóbico)
+            let flashlight = ctx.createRadialGradient(w/2, h/2, 5, w/2, h/2, h * 0.7);
+            flashlight.addColorStop(0, "rgba(0, 0, 0, 0.0)"); 
+            flashlight.addColorStop(0.6, "rgba(0, 0, 0, 0.9)");
+            flashlight.addColorStop(1, "rgba(0, 0, 0, 1)"); 
+            
+            ctx.fillStyle = flashlight;
             ctx.fillRect(0, 0, w, h);
         }
     }
