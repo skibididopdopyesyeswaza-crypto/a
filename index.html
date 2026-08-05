@@ -464,7 +464,7 @@
             if (stalker.active) {
                 let dx = playerX - stalker.x; let dy = playerY - stalker.y;
                 let dist = Math.sqrt(dx*dx + dy*dy);
-                stalker.speed += 0.00002; // Aceleración reducida
+                stalker.speed += 0.00000; // Aceleración reducida
                 if (dist > 0) { stalker.x += (dx / dist) * stalker.speed; stalker.y += (dy / dist) * stalker.speed; }
                 distValue.innerText = dist.toFixed(1);
 
