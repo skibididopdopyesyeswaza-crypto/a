@@ -55,7 +55,6 @@
             pointer-events: none;
         }
 
-        /* Indicador de distancia de la Entidad */
         #distance-hud {
             position: absolute;
             top: 10px;
@@ -171,15 +170,15 @@
     const distValue = document.getElementById('dist-value');
 
     // CONFIGURACIÓN DE AUDIO EXTERNO
-    const deathAudio = new Audio('queque.mp3'); 
-    const mainEntityAudio = new Audio('jijijijaa.mp3'); 
+    const deathAudio = new Audio('jijijijaa.mp3'); 
+    const mainEntityAudio = new Audio('queque.mp3'); 
 
     // CONFIGURACIÓN DE IMÁGENES
     const stalkerImg = new Image();
-    stalkerImg.src = 'monstruo.png'; // <- Cambia esto por el nombre de tu monstruo original
+    stalkerImg.src = 'monstruo.png'; // <- EL MONSTRUO PRINCIPAL
 
     const shadowImg = new Image();
-    shadowImg.src = 'monstruo.png'; // Los enemigos de la otra dimensión
+    shadowImg.src = 'miniqueque.png'; // <- LOS DEL OTRO MUNDO
 
     let spawnX = Math.floor(Math.random() * 200 - 100) + 0.5;
     let spawnY = Math.floor(Math.random() * 200 - 100) + 0.5;
@@ -204,8 +203,9 @@
     let gameState = 'maze'; 
     let zBuffer = new Array(canvas.width); 
 
-    // --- ESTADO DE LAS ENTIDADES (MAS LENTAS AÚN) ---
-    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.3 }; // Era 0.5, ahora 0.3
+    // --- ESTADO DE LAS ENTIDADES ---
+    // VELOCIDAD DE LA ENTIDAD PRINCIPAL AUMENTADA (0.75 en lugar de 0.3)
+    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.75 }; 
     let shadows = []; 
     let stalkerTriggerFrame = 7200; 
 
@@ -299,7 +299,6 @@
                 type: 'shadow',
                 x: playerX + (Math.random() - 0.5) * 40,
                 y: playerY + (Math.random() - 0.5) * 40,
-                // Sombras aún más lentas
                 speed: walkSpeed * (0.1 + Math.random() * 0.1) 
             });
         }
@@ -467,7 +466,6 @@
                                 );
                             }
                         } else if (s.type === 'shadow') {
-                            // DIBUJAR A LOS MINI QUEQUES
                             if (shadowImg.complete && shadowImg.naturalWidth !== 0) {
                                 let texX = Math.floor((stripe - drawStartX) * shadowImg.width / sWidth);
                                 let texWidth = Math.max(1, Math.floor(2 * shadowImg.width / sWidth));
@@ -672,18 +670,18 @@
         if (gameState === 'maze') {
             // Linterna en el laberinto normal
             let flashlight = ctx.createRadialGradient(w/2, h/2, 20, w/2, h/2, h * 0.9);
-            flashlight.addColorStop(0, "rgba(255, 255, 220, 0.0)"); // Transparente en el centro
-            flashlight.addColorStop(0.5, "rgba(0, 0, 0, 0.5)");     // Sombra media
-            flashlight.addColorStop(1, "rgba(0, 0, 0, 0.95)");      // Muy oscuro en los bordes
+            flashlight.addColorStop(0, "rgba(255, 255, 220, 0.0)"); 
+            flashlight.addColorStop(0.5, "rgba(0, 0, 0, 0.5)");     
+            flashlight.addColorStop(1, "rgba(0, 0, 0, 0.95)");      
             
             ctx.fillStyle = flashlight;
             ctx.fillRect(0, 0, w, h);
         } else if (gameState === 'dark_realm') {
-            // Linterna mucho más débil en el reino oscuro (claustrofóbico)
-            let flashlight = ctx.createRadialGradient(w/2, h/2, 5, w/2, h/2, h * 0.7);
-            flashlight.addColorStop(0, "rgba(0, 0, 0, 0.0)"); 
-            flashlight.addColorStop(0.6, "rgba(0, 0, 0, 0.9)");
-            flashlight.addColorStop(1, "rgba(0, 0, 0, 1)"); 
+            // Linterna adaptada para el otro mundo (más visible y clara en el centro)
+            let flashlight = ctx.createRadialGradient(w/2, h/2, 10, w/2, h/2, h * 0.85);
+            flashlight.addColorStop(0, "rgba(255, 255, 255, 0.1)"); // Luz blanca suave al centro
+            flashlight.addColorStop(0.4, "rgba(0, 0, 0, 0.6)");     // Sombra media
+            flashlight.addColorStop(1, "rgba(0, 0, 0, 1)");         // Oscuridad total en los bordes
             
             ctx.fillStyle = flashlight;
             ctx.fillRect(0, 0, w, h);
