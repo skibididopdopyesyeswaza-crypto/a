@@ -32,7 +32,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            cursor: crosshair;
+            cursor: crosshair; /* Aunque ocultaremos el cursor al jugar */
         }
 
         canvas {
@@ -144,7 +144,7 @@
     <div id="sidebar">
         <h2>CONTROLES</h2>
         <ul>
-            <li><span class="key">MOUSE</span> MIRAR</li>
+            <li><span class="key">MOUSE</span> MIRAR/DISPARAR</li>
             <li><span class="key">W</span> ADELANTE</li>
             <li><span class="key">S</span> ATRÁS</li>
             <li><span class="key">A</span> PASO IZQ.</li>
@@ -172,7 +172,8 @@
     // CONFIGURACIÓN DE AUDIO EXTERNO
     const deathAudio = new Audio('jijijijaa.mp3'); 
     const mainEntityAudio = new Audio('queque.mp3'); 
-    const rayoAudio = new Audio('rayopollito.mp3'); // <- NUEVO AUDIO
+    const rayoAudio = new Audio('rayopollito.mp3');
+    const gunAudio = new Audio('pistola.mp3'); // <- NUEVO AUDIO PISTOLA
 
     // CONFIGURACIÓN DE IMÁGENES
     const stalkerImg = new Image();
@@ -184,6 +185,7 @@
     const rayoImg = new Image();
     rayoImg.src = 'rayoxd.png';
 
+    // VARIABLES DEL JUGADOR
     let spawnX = Math.floor(Math.random() * 200 - 100) + 0.5;
     let spawnY = Math.floor(Math.random() * 200 - 100) + 0.5;
     
@@ -207,8 +209,12 @@
     let gameState = 'maze'; 
     let zBuffer = new Array(canvas.width); 
 
-    // --- ESTADO DE LAS ENTIDADES ---
-    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.75 }; 
+    // NUEVAS VARIABLES GLOBALES
+    let wasTouchingRayo = false; // Control de audio de pared
+    let shootFrame = 0; // Animación del arma
+
+    // --- ESTADO DE LAS ENTIDADES (AHORA CON VIDA) ---
+    let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.75, hp: 100, maxHp: 100, type: 'stalker' }; 
     let shadows = []; 
     let stalkerTriggerFrame = 7200; 
 
@@ -302,7 +308,9 @@
                 type: 'shadow',
                 x: playerX + (Math.random() - 0.5) * 40,
                 y: playerY + (Math.random() - 0.5) * 40,
-                speed: walkSpeed * (0.1 + Math.random() * 0.1) 
+                speed: walkSpeed * (0.1 + Math.random() * 0.1),
+                hp: 30, // Vida de cada sombra
+                maxHp: 30
             });
         }
     }
@@ -312,6 +320,7 @@
         framesAlive = 0;
         stalker.active = false;
         stalker.speed = walkSpeed * 0.75; 
+        stalker.hp = stalker.maxHp;
         distanceHud.style.display = 'none';
         shadows = [];
         stamina = maxStamina;
@@ -320,7 +329,65 @@
         playerY = spawnY;
     }
 
-    canvas.addEventListener('click', async () => { if (!document.pointerLockElement) await canvas.requestPointerLock(); });
+    // --- MECÁNICA DE DISPARO AL HACER CLIC ---
+    canvas.addEventListener('click', async () => { 
+        if (!document.pointerLockElement) {
+            await canvas.requestPointerLock(); 
+        } else {
+            // Si el arma está lista para disparar (no está en animación)
+            if (shootFrame === 0) {
+                shootFrame = 8; // Fotogramas que dura la animación del arma
+                
+                gunAudio.currentTime = 0; // Reiniciar audio de la pistola
+                gunAudio.play().catch(e => console.log("Audio de arma bloqueado"));
+
+                // Detectar qué sprites están presentes
+                let spritesToDetect = [];
+                if (gameState === 'maze' && stalker.active) spritesToDetect.push(stalker);
+                if (gameState === 'dark_realm') spritesToDetect = shadows;
+
+                let hitSprite = null;
+                let closestDist = Infinity;
+
+                // CÁLCULO DE HITSCAN (Detección de colisión visual central)
+                for (let s of spritesToDetect) {
+                    if (s.hp <= 0) continue;
+                    let dx = s.x - playerX;
+                    let dy = s.y - playerY;
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    
+                    let spriteAngle = Math.atan2(dy, dx);
+                    let playerAngle = Math.atan2(dirY, dirX);
+                    // Normalizar la diferencia de ángulos
+                    let angleDiff = Math.atan2(Math.sin(spriteAngle - playerAngle), Math.cos(spriteAngle - playerAngle));
+                    
+                    // Si el enemigo está en el campo de visión central (mira)
+                    if (Math.abs(angleDiff) < 0.25) {
+                        let wallDist = zBuffer[Math.floor(canvas.width / 2)];
+                        // Si no hay una pared estorbando y es el más cercano
+                        if (dist < wallDist && dist < closestDist) {
+                            closestDist = dist;
+                            hitSprite = s;
+                        }
+                    }
+                }
+
+                // SI LE DIMOS A ALGO
+                if (hitSprite) {
+                    hitSprite.hp -= 20; // Daño del arma
+                    if (hitSprite.hp <= 0) {
+                        if (hitSprite.type === 'stalker') {
+                            stalker.active = false;
+                            stalker.hp = stalker.maxHp; // Se resetea su vida
+                            stalkerTriggerFrame = framesAlive + 1000; // Vuelve a aparecer en un rato
+                            distanceHud.style.display = 'none';
+                        }
+                    }
+                }
+            }
+        }
+    });
+
     document.addEventListener('pointerlockchange', () => { overlay.style.display = (document.pointerLockElement === canvas) ? 'none' : 'flex'; });
     
     document.addEventListener('mousemove', (e) => {
@@ -340,6 +407,8 @@
     window.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
 
     function update() {
+        if (shootFrame > 0) shootFrame--; // Actualizar el temporizador del arma
+
         if (gameState === 'maze') {
             framesAlive++;
             
@@ -370,39 +439,43 @@
                 }
             }
 
-            // --- SISTEMA DETECCIÓN DE TOQUE DE MURO SORPRESA ---
+            // --- SISTEMA DETECCIÓN DE TOQUE DE MURO SORPRESA MEJORADO ---
             let pX = Math.floor(playerX);
             let pY = Math.floor(playerY);
-            let touchedRayo = false;
+            let currentlyTouchingRayo = false; // Variable local de este frame
 
-            // Revisamos los bloques cercanos al jugador (un radio de 1 bloque)
             for (let dx = -1; dx <= 1; dx++) {
                 for (let dy = -1; dy <= 1; dy++) {
                     let cX = pX + dx;
                     let cY = pY + dy;
                     if (getMapBlock(cX, cY) > 0) {
-                        let isRayoWall = (hash(cX + 7.77, cY + 3.33) > 0.75);
+                        let isRayoWall = (hash(cX + 7.77, cY + 3.33) > 0.95); // Igualado al renderizado
                         if (isRayoWall) {
-                            // Calcula la distancia desde el jugador a la pared más cercana del bloque
                             let distX = Math.max(cX, Math.min(playerX, cX + 1)) - playerX;
                             let distY = Math.max(cY, Math.min(playerY, cY + 1)) - playerY;
                             let distance = Math.sqrt(distX * distX + distY * distY);
                             
                             if (distance < 0.4) { 
-                                touchedRayo = true;
+                                currentlyTouchingRayo = true;
                             }
                         }
                     }
                 }
             }
 
-            if (touchedRayo) {
-                if (rayoAudio.paused || rayoAudio.ended) {
-                    rayoAudio.play().catch(e => console.log("Audio bloqueado"));
-                }
+            // Solo suena cuando ENTRA en contacto (no en bucle)
+            if (currentlyTouchingRayo && !wasTouchingRayo) {
+                rayoAudio.currentTime = 0; // Reiniciar por si acaso
+                rayoAudio.play().catch(e => console.log("Audio rayopollito bloqueado"));
             }
+            // Actualizar la variable global para el siguiente frame
+            wasTouchingRayo = currentlyTouchingRayo;
+
         } 
         else if (gameState === 'dark_realm') {
+            // Limpiar sombras muertas
+            shadows = shadows.filter(s => s.hp > 0);
+
             for (let s of shadows) {
                 let dx = playerX - s.x;
                 let dy = playerY - s.y;
@@ -522,6 +595,28 @@
                             }
                         }
                     }
+                }
+
+                // --- DIBUJAR VIDA ARRIBA DEL MONSTRUO ---
+                // Solo si está visible en la pantalla (no detrás de una pared)
+                let isVisible = (spriteScreenX > 0 && spriteScreenX < w && transformY < zBuffer[Math.floor(spriteScreenX)]);
+                if (isVisible && s.hp > 0) {
+                    let barWidth = 30;
+                    let hpRatio = s.hp / s.maxHp;
+                    
+                    // Fondo rojo de la vida
+                    ctx.fillStyle = "#FF0000";
+                    ctx.fillRect(spriteScreenX - barWidth/2, drawStartY - 10, barWidth, 4);
+                    
+                    // Relleno verde de la vida
+                    ctx.fillStyle = "#00FF00";
+                    ctx.fillRect(spriteScreenX - barWidth/2, drawStartY - 10, barWidth * hpRatio, 4);
+                    
+                    // Texto numérico
+                    ctx.fillStyle = "#FFFFFF";
+                    ctx.font = "12px 'VT323', monospace";
+                    ctx.textAlign = "center";
+                    ctx.fillText(Math.floor(s.hp) + "/" + s.maxHp, spriteScreenX, drawStartY - 14);
                 }
             }
         }
@@ -714,8 +809,8 @@
         }
 
         let spritesToDraw = [];
-        if (gameState === 'maze' && stalker.active) {
-            spritesToDraw.push({type: 'stalker', x: stalker.x, y: stalker.y});
+        if (gameState === 'maze' && stalker.active && stalker.hp > 0) {
+            spritesToDraw.push(stalker);
         } 
         else if (gameState === 'dark_realm') {
             for (let s of shadows) spritesToDraw.push(s);
@@ -725,6 +820,7 @@
             drawSprites(spritesToDraw, w, h);
         }
 
+        // Iluminación
         if (gameState === 'maze') {
             let flashlight = ctx.createRadialGradient(w/2, h/2, 20, w/2, h/2, h * 0.9);
             flashlight.addColorStop(0, "rgba(255, 255, 220, 0.0)"); 
@@ -742,6 +838,29 @@
             ctx.fillStyle = flashlight;
             ctx.fillRect(0, 0, w, h);
         }
+
+        // --- RENDERIZADO DEL ARMA ---
+        let gunOffset = shootFrame > 0 ? 10 : 0; // Retroceso visual si se está disparando
+        
+        // Base de la pistola
+        ctx.fillStyle = "#333333";
+        ctx.fillRect(w/2 - 15, h - 50 + gunOffset, 30, 60);
+        // Cañón
+        ctx.fillStyle = "#555555";
+        ctx.fillRect(w/2 - 5, h - 70 + gunOffset, 10, 20);
+        
+        // Fogonazo
+        if (shootFrame > 4) { // Se ve brillante en la primera mitad del disparo
+            ctx.fillStyle = "#FFFF00";
+            ctx.beginPath();
+            ctx.arc(w/2, h - 75 + gunOffset, 12 + Math.random()*8, 0, Math.PI*2);
+            ctx.fill();
+        }
+
+        // --- RENDERIZADO DE LA MIRA (Crosshair) ---
+        ctx.fillStyle = "rgba(0, 255, 0, 0.6)";
+        ctx.fillRect(w/2 - 1, h/2 - 4, 2, 8); // Vertical
+        ctx.fillRect(w/2 - 4, h/2 - 1, 8, 2); // Horizontal
     }
 
     function gameLoop() {
