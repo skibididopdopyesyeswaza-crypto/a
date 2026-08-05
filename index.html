@@ -381,7 +381,7 @@
                     let cX = pX + dx;
                     let cY = pY + dy;
                     if (getMapBlock(cX, cY) > 0) {
-                        let isRayoWall = (hash(cX + 7.77, cY + 3.33) > 0.50);
+                        let isRayoWall = (hash(cX + 7.77, cY + 3.33) > 0.75);
                         if (isRayoWall) {
                             // Calcula la distancia desde el jugador a la pared más cercana del bloque
                             let distX = Math.max(cX, Math.min(playerX, cX + 1)) - playerX;
