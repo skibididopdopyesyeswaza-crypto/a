@@ -32,7 +32,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            cursor: crosshair; /* Aunque ocultaremos el cursor al jugar */
+            cursor: crosshair;
         }
 
         canvas {
@@ -106,18 +106,18 @@
             font-weight: bold;
         }
 
-        #stamina-container {
-            margin-top: 25px;
+        .status-container {
+            margin-top: 20px;
         }
         
-        #stamina-title {
+        .status-title {
             text-align: center;
             font-weight: bold;
             font-size: 24px;
             margin-bottom: 5px;
         }
 
-        #stamina-bg {
+        .status-bg {
             width: 100%;
             height: 24px;
             background: #444;
@@ -129,7 +129,13 @@
             width: 100%;
             height: 100%;
             background: #00FF00;
-            transition: background-color 0.2s;
+            transition: width 0.1s;
+        }
+
+        #gun-fill {
+            width: 100%;
+            height: 100%;
+            background: #0088FF;
         }
     </style>
 </head>
@@ -144,7 +150,7 @@
     <div id="sidebar">
         <h2>CONTROLES</h2>
         <ul>
-            <li><span class="key">MOUSE</span> MIRAR/DISPARAR</li>
+            <li><span class="key">MOUSE</span> MIRAR/DISPARO</li>
             <li><span class="key">W</span> ADELANTE</li>
             <li><span class="key">S</span> ATRÁS</li>
             <li><span class="key">A</span> PASO IZQ.</li>
@@ -152,10 +158,17 @@
             <li><span class="key">SHIFT</span> CORRER</li>
         </ul>
 
-        <div id="stamina-container">
-            <div id="stamina-title">ESTAMINA</div>
-            <div id="stamina-bg">
+        <div class="status-container">
+            <div class="status-title" id="stamina-label">ESTAMINA</div>
+            <div class="status-bg">
                 <div id="stamina-fill"></div>
+            </div>
+        </div>
+
+        <div class="status-container">
+            <div class="status-title" id="gun-label">ARMA LISTA</div>
+            <div class="status-bg">
+                <div id="gun-fill"></div>
             </div>
         </div>
     </div>
@@ -166,6 +179,9 @@
     const ctx = canvas.getContext('2d');
     const overlay = document.getElementById('click-to-play');
     const staminaFill = document.getElementById('stamina-fill');
+    const staminaLabel = document.getElementById('stamina-label');
+    const gunFill = document.getElementById('gun-fill');
+    const gunLabel = document.getElementById('gun-label');
     const distanceHud = document.getElementById('distance-hud');
     const distValue = document.getElementById('dist-value');
 
@@ -173,7 +189,7 @@
     const deathAudio = new Audio('jijijijaa.mp3'); 
     const mainEntityAudio = new Audio('queque.mp3'); 
     const rayoAudio = new Audio('rayopollito.mp3');
-    const gunAudio = new Audio('pistola.mp3'); // <- NUEVO AUDIO PISTOLA
+    const gunAudio = new Audio('pistola.mp3');
 
     // CONFIGURACIÓN DE IMÁGENES
     const stalkerImg = new Image();
@@ -184,6 +200,10 @@
 
     const rayoImg = new Image();
     rayoImg.src = 'rayoxd.png';
+
+    // NUEVA ENTIDAD SOLICITADA
+    const bossImg = new Image();
+    bossImg.src = 'image_3ff52a.png';
 
     // VARIABLES DEL JUGADOR
     let spawnX = Math.floor(Math.random() * 200 - 100) + 0.5;
@@ -201,22 +221,31 @@
     let currentSpeed = walkSpeed;
     const mouseSensitivity = 0.003; 
 
+    // SISTEMA DE ESTAMINA ARREGLADO
     const maxStamina = 100;
     let stamina = maxStamina;
+    let isExhausted = false; // Control de fatiga
     
     let time = 0; 
     let framesAlive = 0;
     let gameState = 'maze'; 
     let zBuffer = new Array(canvas.width); 
 
-    // NUEVAS VARIABLES GLOBALES
-    let wasTouchingRayo = false; // Control de audio de pared
-    let shootFrame = 0; // Animación del arma
+    let wasTouchingRayo = false; 
+    let shootFrame = 0; 
+    let screenFlash = 0; // Efecto visual de miedo
+    
+    // SISTEMA DE COOLDOWN DEL ARMA
+    let gunCooldown = 0;
+    const MAX_COOLDOWN = 330; // 5.5 segundos (a ~60 frames por segundo)
 
-    // --- ESTADO DE LAS ENTIDADES (AHORA CON VIDA) ---
+    // --- ESTADO DE LAS ENTIDADES ---
     let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.75, hp: 100, maxHp: 100, type: 'stalker' }; 
     let shadows = []; 
-    let stalkerTriggerFrame = 7200; 
+    // NUEVA ENTIDAD (JEFE) CON 5000 HP
+    let boss = { active: false, x: 0, y: 0, speed: walkSpeed * 0.5, hp: 5000, maxHp: 5000, type: 'boss', timerAlive: 0, isAngry: false }; 
+
+    let stalkerTriggerFrame = 300; // Lo puse más bajo para pruebas, ajústalo si quieres
 
     const SEED = Math.random() * 10000;
     const mod = (n, m) => ((n % m) + m) % m;
@@ -229,7 +258,7 @@
     const CHUNK_SIZE = 12; 
 
     function getMapBlock(x, y) {
-        if (gameState === 'dark_realm') {
+        if (gameState === 'dark_realm' || gameState === 'boss_death') {
             if (hash(x, y) > 0.95) return 10; 
             return 0;
         }
@@ -240,7 +269,6 @@
         const chunkX = Math.floor(x / CHUNK_SIZE);
         const chunkY = Math.floor(y / CHUNK_SIZE);
         const chunkHash = hash(chunkX, chunkY);
-        
         const localX = mod(x, CHUNK_SIZE);
         const localY = mod(y, CHUNK_SIZE);
         const centerX = 5.5; 
@@ -283,7 +311,6 @@
             return 0;
         }
         else if (chunkHash < 0.95) return (localX === 0 || localX === CHUNK_SIZE - 1 || localY === 0 || localY === CHUNK_SIZE - 1) ? ((h > 0.5) ? 0 : 5) : 0;
-        
         else if (chunkHash < 0.96) return (h > 0.8) ? 8 : 0; 
         else if (chunkHash < 0.97) return (Math.sin(localX) + Math.cos(localY) > 0.5) ? 9 : 0; 
         else if (chunkHash < 0.98) return (h > 0.6) ? 10 : 0; 
@@ -301,86 +328,89 @@
     function initDarkRealm() {
         gameState = 'dark_realm';
         distanceHud.style.display = 'none';
-        
         shadows = [];
         for (let i = 0; i < 20; i++) {
-            shadows.push({
-                type: 'shadow',
-                x: playerX + (Math.random() - 0.5) * 40,
-                y: playerY + (Math.random() - 0.5) * 40,
-                speed: walkSpeed * (0.1 + Math.random() * 0.1),
-                hp: 30, // Vida de cada sombra
-                maxHp: 30
-            });
+            shadows.push({ type: 'shadow', x: playerX + (Math.random() - 0.5) * 40, y: playerY + (Math.random() - 0.5) * 40, speed: walkSpeed * (0.1 + Math.random() * 0.1), hp: 30, maxHp: 30 });
         }
     }
 
     function resetGame() {
         gameState = 'maze';
         framesAlive = 0;
+        
         stalker.active = false;
-        stalker.speed = walkSpeed * 0.75; 
         stalker.hp = stalker.maxHp;
+        
+        boss.active = false;
+        boss.hp = boss.maxHp;
+        boss.timerAlive = 0;
+        boss.isAngry = false;
+
         distanceHud.style.display = 'none';
         shadows = [];
         stamina = maxStamina;
+        isExhausted = false;
         
         playerX = spawnX;
         playerY = spawnY;
     }
 
-    // --- MECÁNICA DE DISPARO AL HACER CLIC ---
+    // --- MECÁNICA DE DISPARO (Añadido Cooldown) ---
     canvas.addEventListener('click', async () => { 
         if (!document.pointerLockElement) {
             await canvas.requestPointerLock(); 
         } else {
-            // Si el arma está lista para disparar (no está en animación)
-            if (shootFrame === 0) {
-                shootFrame = 8; // Fotogramas que dura la animación del arma
+            // SOLO DISPARA SI NO HAY ANIMACIÓN Y EL COOLDOWN ESTÁ EN CERO
+            if (shootFrame === 0 && gunCooldown === 0) {
+                shootFrame = 8; 
+                gunCooldown = MAX_COOLDOWN; // Iniciar cooldown de 5.5 seg
                 
-                gunAudio.currentTime = 0; // Reiniciar audio de la pistola
-                gunAudio.play().catch(e => console.log("Audio de arma bloqueado"));
+                gunAudio.currentTime = 0; 
+                gunAudio.play().catch(e => console.log("Audio bloqueado"));
 
-                // Detectar qué sprites están presentes
                 let spritesToDetect = [];
-                if (gameState === 'maze' && stalker.active) spritesToDetect.push(stalker);
+                if (gameState === 'maze') {
+                    if (stalker.active) spritesToDetect.push(stalker);
+                    if (boss.active) spritesToDetect.push(boss);
+                }
                 if (gameState === 'dark_realm') spritesToDetect = shadows;
 
                 let hitSprite = null;
                 let closestDist = Infinity;
 
-                // CÁLCULO DE HITSCAN (Detección de colisión visual central)
                 for (let s of spritesToDetect) {
                     if (s.hp <= 0) continue;
-                    let dx = s.x - playerX;
-                    let dy = s.y - playerY;
+                    let dx = s.x - playerX; let dy = s.y - playerY;
                     let dist = Math.sqrt(dx*dx + dy*dy);
-                    
                     let spriteAngle = Math.atan2(dy, dx);
                     let playerAngle = Math.atan2(dirY, dirX);
-                    // Normalizar la diferencia de ángulos
                     let angleDiff = Math.atan2(Math.sin(spriteAngle - playerAngle), Math.cos(spriteAngle - playerAngle));
                     
-                    // Si el enemigo está en el campo de visión central (mira)
                     if (Math.abs(angleDiff) < 0.25) {
                         let wallDist = zBuffer[Math.floor(canvas.width / 2)];
-                        // Si no hay una pared estorbando y es el más cercano
-                        if (dist < wallDist && dist < closestDist) {
-                            closestDist = dist;
-                            hitSprite = s;
-                        }
+                        if (dist < wallDist && dist < closestDist) { closestDist = dist; hitSprite = s; }
                     }
                 }
 
-                // SI LE DIMOS A ALGO
                 if (hitSprite) {
-                    hitSprite.hp -= 20; // Daño del arma
+                    hitSprite.hp -= 25; 
                     if (hitSprite.hp <= 0) {
                         if (hitSprite.type === 'stalker') {
                             stalker.active = false;
-                            stalker.hp = stalker.maxHp; // Se resetea su vida
-                            stalkerTriggerFrame = framesAlive + 1000; // Vuelve a aparecer en un rato
-                            distanceHud.style.display = 'none';
+                            
+                            // SPAWN DE LA NUEVA ENTIDAD (JEFE)
+                            boss.active = true;
+                            boss.hp = boss.maxHp;
+                            boss.x = playerX - dirX * 25; // Aparece más lejos
+                            boss.y = playerY - dirY * 25;
+                            boss.timerAlive = 0;
+                            boss.isAngry = false;
+                            boss.speed = walkSpeed * 0.5;
+                            
+                            // Efecto de aparición (Oscuridad total)
+                            screenFlash = 60; 
+                            deathAudio.currentTime = 0;
+                            deathAudio.play().catch(e => console.log("Audio bloqueado"));
                         }
                     }
                 }
@@ -389,16 +419,11 @@
     });
 
     document.addEventListener('pointerlockchange', () => { overlay.style.display = (document.pointerLockElement === canvas) ? 'none' : 'flex'; });
-    
     document.addEventListener('mousemove', (e) => {
-        if (document.pointerLockElement === canvas) {
+        if (document.pointerLockElement === canvas && gameState !== 'boss_death') {
             let rot = -e.movementX * mouseSensitivity;
-            const oldDirX = dirX;
-            dirX = dirX * Math.cos(rot) - dirY * Math.sin(rot);
-            dirY = oldDirX * Math.sin(rot) + dirY * Math.cos(rot);
-            const oldPlaneX = planeX;
-            planeX = planeX * Math.cos(rot) - planeY * Math.sin(rot);
-            planeY = oldPlaneX * Math.sin(rot) + planeY * Math.cos(rot);
+            const oldDirX = dirX; dirX = dirX * Math.cos(rot) - dirY * Math.sin(rot); dirY = oldDirX * Math.sin(rot) + dirY * Math.cos(rot);
+            const oldPlaneX = planeX; planeX = planeX * Math.cos(rot) - planeY * Math.sin(rot); planeY = oldPlaneX * Math.sin(rot) + planeY * Math.cos(rot);
         }
     });
 
@@ -407,30 +432,38 @@
     window.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
 
     function update() {
-        if (shootFrame > 0) shootFrame--; // Actualizar el temporizador del arma
+        if (gameState === 'boss_death') return; // Paralizar actualizaciones físicas si te mató el jefe
+
+        if (shootFrame > 0) shootFrame--; 
+        if (screenFlash > 0) screenFlash--;
+
+        // GESTIÓN DEL COOLDOWN DE LA PISTOLA
+        if (gunCooldown > 0) {
+            gunCooldown--;
+            gunFill.style.width = `${((MAX_COOLDOWN - gunCooldown) / MAX_COOLDOWN) * 100}%`;
+            gunFill.style.background = '#FF0000';
+            gunLabel.innerText = "RECARGANDO...";
+        } else {
+            gunFill.style.width = '100%';
+            gunFill.style.background = '#0088FF';
+            gunLabel.innerText = "ARMA LISTA";
+        }
 
         if (gameState === 'maze') {
             framesAlive++;
             
-            if (framesAlive > stalkerTriggerFrame && !stalker.active) {
+            if (framesAlive > stalkerTriggerFrame && !stalker.active && !boss.active) {
                 stalker.active = true;
-                stalker.x = playerX - dirX * 15;
-                stalker.y = playerY - dirY * 15;
+                stalker.x = playerX - dirX * 15; stalker.y = playerY - dirY * 15;
                 distanceHud.style.display = 'block';
             }
 
+            // LÓGICA STALKER NORMAL
             if (stalker.active) {
-                let dx = playerX - stalker.x;
-                let dy = playerY - stalker.y;
+                let dx = playerX - stalker.x; let dy = playerY - stalker.y;
                 let dist = Math.sqrt(dx*dx + dy*dy);
-                
                 stalker.speed += 0.00005; 
-
-                if (dist > 0) {
-                    stalker.x += (dx / dist) * stalker.speed;
-                    stalker.y += (dy / dist) * stalker.speed;
-                }
-
+                if (dist > 0) { stalker.x += (dx / dist) * stalker.speed; stalker.y += (dy / dist) * stalker.speed; }
                 distValue.innerText = dist.toFixed(1);
 
                 if (dist < 0.6) {
@@ -439,55 +472,66 @@
                 }
             }
 
-            // --- SISTEMA DETECCIÓN DE TOQUE DE MURO SORPRESA MEJORADO ---
-            let pX = Math.floor(playerX);
-            let pY = Math.floor(playerY);
-            let currentlyTouchingRayo = false; // Variable local de este frame
+            // --- LÓGICA DEL NUEVO JEFE ---
+            if (boss.active) {
+                boss.timerAlive++;
+                let dx = playerX - boss.x; let dy = playerY - boss.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                
+                // EVENTO DE FURIA A LOS 10 SEGUNDOS (600 frames aprox)
+                if (boss.timerAlive === 600) {
+                    boss.isAngry = true;
+                    boss.speed = runSpeed * 0.95; // Se vuelve MUY rápido
+                    screenFlash = 30; // Efecto visual
+                    mainEntityAudio.currentTime = 0;
+                    mainEntityAudio.play().catch(e => {}); // Grito perturbador
+                }
+
+                if (dist > 0) { 
+                    boss.x += (dx / dist) * boss.speed; 
+                    boss.y += (dy / dist) * boss.speed; 
+                }
+                
+                distValue.innerText = dist.toFixed(1);
+
+                if (dist < 0.8) {
+                    // Muerte fea por el jefe
+                    gameState = 'boss_death';
+                    deathAudio.currentTime = 0;
+                    deathAudio.play().catch(e=>console.log(e));
+                }
+            }
+
+            let pX = Math.floor(playerX); let pY = Math.floor(playerY);
+            let currentlyTouchingRayo = false; 
 
             for (let dx = -1; dx <= 1; dx++) {
                 for (let dy = -1; dy <= 1; dy++) {
-                    let cX = pX + dx;
-                    let cY = pY + dy;
+                    let cX = pX + dx; let cY = pY + dy;
                     if (getMapBlock(cX, cY) > 0) {
-                        let isRayoWall = (hash(cX + 7.77, cY + 3.33) > 0.95); // Igualado al renderizado
+                        let isRayoWall = (hash(cX + 7.77, cY + 3.33) > 0.95); 
                         if (isRayoWall) {
                             let distX = Math.max(cX, Math.min(playerX, cX + 1)) - playerX;
                             let distY = Math.max(cY, Math.min(playerY, cY + 1)) - playerY;
                             let distance = Math.sqrt(distX * distX + distY * distY);
-                            
-                            if (distance < 0.4) { 
-                                currentlyTouchingRayo = true;
-                            }
+                            if (distance < 0.4) currentlyTouchingRayo = true;
                         }
                     }
                 }
             }
 
-            // Solo suena cuando ENTRA en contacto (no en bucle)
             if (currentlyTouchingRayo && !wasTouchingRayo) {
-                rayoAudio.currentTime = 0; // Reiniciar por si acaso
-                rayoAudio.play().catch(e => console.log("Audio rayopollito bloqueado"));
+                rayoAudio.currentTime = 0; rayoAudio.play().catch(e => console.log("Audio bloqueado"));
             }
-            // Actualizar la variable global para el siguiente frame
             wasTouchingRayo = currentlyTouchingRayo;
 
-        } 
-        else if (gameState === 'dark_realm') {
-            // Limpiar sombras muertas
+        } else if (gameState === 'dark_realm') {
             shadows = shadows.filter(s => s.hp > 0);
-
             for (let s of shadows) {
-                let dx = playerX - s.x;
-                let dy = playerY - s.y;
+                let dx = playerX - s.x; let dy = playerY - s.y;
                 let dist = Math.sqrt(dx*dx + dy*dy);
-                
                 s.speed += 0.00005;
-
-                if (dist > 0) {
-                    s.x += (dx / dist) * s.speed;
-                    s.y += (dy / dist) * s.speed;
-                }
-
+                if (dist > 0) { s.x += (dx / dist) * s.speed; s.y += (dy / dist) * s.speed; }
                 if (dist < 0.5) {
                     deathAudio.play().catch(e => console.log("Audio bloqueado"));
                     resetGame();
@@ -496,20 +540,36 @@
             }
         }
 
+        // --- SISTEMA DE ESTAMINA CORREGIDO ---
         const isMoving = keys.w || keys.s || keys.a || keys.d;
 
-        if (keys.shift && isMoving && stamina > 0) {
-            currentSpeed = runSpeed; stamina -= 0.15; 
+        if (stamina <= 0) { 
+            isExhausted = true; 
+            staminaLabel.innerText = "FATIGA";
+        }
+        if (stamina > 30) { 
+            isExhausted = false; 
+            staminaLabel.innerText = "ESTAMINA";
+        }
+
+        if (keys.shift && isMoving && !isExhausted) {
+            currentSpeed = runSpeed; 
+            stamina -= 0.3; // Drena un poco más rápido para balance
         } else {
-            currentSpeed = walkSpeed; if (stamina < maxStamina) stamina += 0.05; 
+            currentSpeed = walkSpeed; 
+            if (stamina < maxStamina) stamina += 0.15; 
         }
         
         if (stamina < 0) stamina = 0; if (stamina > maxStamina) stamina = maxStamina;
 
         staminaFill.style.width = `${stamina}%`;
-        if (stamina > 50) staminaFill.style.background = '#00FF00'; 
-        else if (stamina > 20) staminaFill.style.background = '#FFFF00'; 
-        else staminaFill.style.background = '#FF0000'; 
+        if (isExhausted) {
+            staminaFill.style.background = '#8B0000'; // Rojo oscuro de fatiga
+        } else {
+            if (stamina > 50) staminaFill.style.background = '#00FF00'; 
+            else if (stamina > 20) staminaFill.style.background = '#FFFF00'; 
+            else staminaFill.style.background = '#FF0000'; 
+        }
 
         if (keys.w) {
             if (getMapBlock(Math.floor(playerX + dirX * currentSpeed * 2.5), Math.floor(playerY)) === 0) playerX += dirX * currentSpeed;
@@ -519,9 +579,7 @@
             if (getMapBlock(Math.floor(playerX - dirX * currentSpeed * 2.5), Math.floor(playerY)) === 0) playerX -= dirX * currentSpeed;
             if (getMapBlock(Math.floor(playerX), Math.floor(playerY - dirY * currentSpeed * 2.5)) === 0) playerY -= dirY * currentSpeed;
         }
-
         let strafeX = dirY; let strafeY = -dirX;
-
         if (keys.d) {
             if (getMapBlock(Math.floor(playerX + strafeX * currentSpeed * 2.5), Math.floor(playerY)) === 0) playerX += strafeX * currentSpeed;
             if (getMapBlock(Math.floor(playerX), Math.floor(playerY + strafeY * currentSpeed * 2.5)) === 0) playerY += strafeY * currentSpeed;
@@ -540,82 +598,65 @@
 
         for (let i = 0; i < spritesToDraw.length; i++) {
             let s = spritesToDraw[i];
-            
-            let spriteX = s.x - playerX;
-            let spriteY = s.y - playerY;
-
+            let spriteX = s.x - playerX; let spriteY = s.y - playerY;
             let invDet = 1.0 / (planeX * dirY - dirX * planeY);
             let transformX = invDet * (dirY * spriteX - dirX * spriteY);
             let transformY = invDet * (-planeY * spriteX + planeX * spriteY); 
 
             if (transformY > 0.1) { 
                 let spriteScreenX = Math.floor((w / 2) * (1 + transformX / transformY));
-                
                 let sHeight = Math.abs(Math.floor(h / transformY));
-                if (s.type === 'stalker') sHeight = Math.floor(sHeight * 1.2); 
                 
-                let drawStartY = Math.floor(-sHeight / 2 + h / 2);
-                if (drawStartY < 0) drawStartY = 0;
+                if (s.type === 'stalker') sHeight = Math.floor(sHeight * 1.2);
+                if (s.type === 'boss') sHeight = Math.floor(sHeight * 1.5); // El jefe es más alto
                 
-                let drawEndY = Math.floor(sHeight / 2 + h / 2);
-                if (drawEndY >= h) drawEndY = h - 1;
-
-                let sWidth = sHeight / (s.type === 'stalker' ? 1.5 : 2);
+                let drawStartY = Math.floor(-sHeight / 2 + h / 2); if (drawStartY < 0) drawStartY = 0;
+                let drawEndY = Math.floor(sHeight / 2 + h / 2); if (drawEndY >= h) drawEndY = h - 1;
+                let sWidth = sHeight / (s.type === 'stalker' ? 1.5 : (s.type === 'boss' ? 1.2 : 2));
                 let drawStartX = Math.floor(-sWidth / 2 + spriteScreenX);
                 let drawEndX = Math.floor(sWidth / 2 + spriteScreenX);
 
                 for (let stripe = drawStartX; stripe < drawEndX; stripe += 2) {
                     if (stripe >= 0 && stripe < w && transformY < zBuffer[stripe]) {
                         
-                        if (s.type === 'stalker') {
-                            if (stalkerImg.complete && stalkerImg.naturalWidth !== 0) {
-                                let texX = Math.floor((stripe - drawStartX) * stalkerImg.width / sWidth);
-                                let texWidth = Math.max(1, Math.floor(2 * stalkerImg.width / sWidth));
-                                
-                                ctx.drawImage(
-                                    stalkerImg, 
-                                    texX, 0, texWidth, stalkerImg.height, 
-                                    stripe, drawStartY, 2, drawEndY - drawStartY 
-                                );
+                        let currentImg = null;
+                        if (s.type === 'stalker') currentImg = stalkerImg;
+                        else if (s.type === 'shadow') currentImg = shadowImg;
+                        else if (s.type === 'boss') currentImg = bossImg;
+
+                        if (currentImg && currentImg.complete && currentImg.naturalWidth !== 0) {
+                            let texX = Math.floor((stripe - drawStartX) * currentImg.width / sWidth);
+                            let texWidth = Math.max(1, Math.floor(2 * currentImg.width / sWidth));
+                            
+                            // Efecto tembloroso si el jefe está furioso
+                            let vShake = 0;
+                            if (s.type === 'boss' && s.isAngry) {
+                                vShake = (Math.random() - 0.5) * 15;
+                                ctx.filter = Math.random() > 0.8 ? 'invert(100%)' : 'none';
+                            } else if (gameState === 'dark_realm') {
+                                ctx.globalAlpha = Math.max(0, 1 - transformY/8);
                             }
-                        } else if (s.type === 'shadow') {
-                            if (shadowImg.complete && shadowImg.naturalWidth !== 0) {
-                                let texX = Math.floor((stripe - drawStartX) * shadowImg.width / sWidth);
-                                let texWidth = Math.max(1, Math.floor(2 * shadowImg.width / sWidth));
-                                
-                                if (gameState === 'dark_realm') {
-                                    ctx.globalAlpha = Math.max(0, 1 - transformY/8);
-                                }
-                                ctx.drawImage(
-                                    shadowImg, 
-                                    texX, 0, texWidth, shadowImg.height, 
-                                    stripe, drawStartY, 2, drawEndY - drawStartY 
-                                );
-                                ctx.globalAlpha = 1.0;
-                            }
+
+                            ctx.drawImage(
+                                currentImg, 
+                                texX, 0, texWidth, currentImg.height, 
+                                stripe, drawStartY + vShake, 2, drawEndY - drawStartY 
+                            );
+                            
+                            ctx.globalAlpha = 1.0;
+                            ctx.filter = 'none';
                         }
                     }
                 }
 
-                // --- DIBUJAR VIDA ARRIBA DEL MONSTRUO ---
-                // Solo si está visible en la pantalla (no detrás de una pared)
                 let isVisible = (spriteScreenX > 0 && spriteScreenX < w && transformY < zBuffer[Math.floor(spriteScreenX)]);
                 if (isVisible && s.hp > 0) {
                     let barWidth = 30;
                     let hpRatio = s.hp / s.maxHp;
-                    
-                    // Fondo rojo de la vida
-                    ctx.fillStyle = "#FF0000";
-                    ctx.fillRect(spriteScreenX - barWidth/2, drawStartY - 10, barWidth, 4);
-                    
-                    // Relleno verde de la vida
-                    ctx.fillStyle = "#00FF00";
+                    ctx.fillStyle = "#FF0000"; ctx.fillRect(spriteScreenX - barWidth/2, drawStartY - 10, barWidth, 4);
+                    ctx.fillStyle = s.type === 'boss' ? "#FF00FF" : "#00FF00"; // Barra magenta para el jefe
                     ctx.fillRect(spriteScreenX - barWidth/2, drawStartY - 10, barWidth * hpRatio, 4);
-                    
-                    // Texto numérico
-                    ctx.fillStyle = "#FFFFFF";
-                    ctx.font = "12px 'VT323', monospace";
-                    ctx.textAlign = "center";
+                    ctx.fillStyle = "#FFFFFF"; ctx.font = "12px 'VT323', monospace"; ctx.textAlign = "center";
                     ctx.fillText(Math.floor(s.hp) + "/" + s.maxHp, spriteScreenX, drawStartY - 14);
                 }
             }
@@ -623,20 +664,45 @@
     }
 
     function draw() {
-        const w = canvas.width;
-        const h = canvas.height;
+        const w = canvas.width; const h = canvas.height;
 
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, w, h);
+        // EFECTO DE MUERTE FEA POR EL JEFE
+        if (gameState === 'boss_death') {
+            let glitchX = (Math.random() - 0.5) * 40;
+            let glitchY = (Math.random() - 0.5) * 40;
+            
+            if (bossImg.complete && bossImg.naturalWidth !== 0) {
+                ctx.drawImage(bossImg, glitchX, glitchY, w + Math.random()*50, h + Math.random()*50);
+            }
+            
+            // Colores invertidos / saturados y sangrientos al azar
+            ctx.globalCompositeOperation = "difference";
+            ctx.fillStyle = Math.random() > 0.5 ? "rgba(255, 0, 0, 1)" : "rgba(255, 255, 255, 1)";
+            ctx.fillRect(0, 0, w, h);
+            ctx.globalCompositeOperation = "source-over";
+
+            // Ruido de estática
+            for(let i = 0; i < 25; i++) {
+                ctx.fillStyle = Math.random() > 0.5 ? "#FFF" : "#000";
+                ctx.fillRect(Math.random()*w, Math.random()*h, Math.random()*w, Math.random()*10);
+            }
+            
+            // Botón falso de reseteo para atrapar al jugador
+            ctx.fillStyle = "white";
+            ctx.font = "40px 'VT323', monospace";
+            ctx.textAlign = "center";
+            ctx.fillText("ESTÁS MUERTO", w/2, h/2 + Math.random()*10);
+            
+            // Recargar página después de un ratito
+            if (time % 200 === 199) location.reload();
+            return; 
+        }
+
+        ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
 
         for (let x = 0; x < w; x += 2) { 
-            let cameraX = 2 * x / w - 1;
-            let rayDirX = dirX + planeX * cameraX;
-            let rayDirY = dirY + planeY * cameraX;
-
-            let mapX = Math.floor(playerX);
-            let mapY = Math.floor(playerY);
-
+            let cameraX = 2 * x / w - 1; let rayDirX = dirX + planeX * cameraX; let rayDirY = dirY + planeY * cameraX;
+            let mapX = Math.floor(playerX); let mapY = Math.floor(playerY);
             let sideDistX, sideDistY, deltaDistX = Math.abs(1 / rayDirX), deltaDistY = Math.abs(1 / rayDirY), perpWallDist;
             let stepX, stepY, hit = 0, side, wallType = 0;
 
@@ -644,223 +710,117 @@
             if (rayDirY < 0) { stepY = -1; sideDistY = (playerY - mapY) * deltaDistY; } else { stepY = 1; sideDistY = (mapY + 1.0 - playerY) * deltaDistY; }
 
             let maxDepth = (gameState === 'dark_realm') ? 15 : 40; 
-            
             while (hit === 0 && maxDepth > 0) {
                 if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; } else { sideDistY += deltaDistY; mapY += stepY; side = 1; }
-                wallType = getMapBlock(mapX, mapY);
-                if (wallType > 0) hit = 1;
+                wallType = getMapBlock(mapX, mapY); if (wallType > 0) hit = 1;
                 maxDepth--;
             }
 
-            if (hit === 1) {
-                if (side === 0) perpWallDist = (mapX - playerX + (1 - stepX) / 2) / rayDirX; else perpWallDist = (mapY - playerY + (1 - stepY) / 2) / rayDirY;
-            } else {
-                perpWallDist = 9999; 
-            }
-
-            zBuffer[x] = perpWallDist;
-            zBuffer[x+1] = perpWallDist;
+            if (hit === 1) { if (side === 0) perpWallDist = (mapX - playerX + (1 - stepX) / 2) / rayDirX; else perpWallDist = (mapY - playerY + (1 - stepY) / 2) / rayDirY; } 
+            else { perpWallDist = 9999; }
+            zBuffer[x] = perpWallDist; zBuffer[x+1] = perpWallDist;
 
             if (hit === 1) {
-                let wallX;
-                if (side === 0) wallX = playerY + perpWallDist * rayDirY; else wallX = playerX + perpWallDist * rayDirX;
+                let wallX; if (side === 0) wallX = playerY + perpWallDist * rayDirY; else wallX = playerX + perpWallDist * rayDirX;
                 wallX -= Math.floor(wallX);
-
                 let lineHeight = Math.floor(h / perpWallDist);
                 let drawStart = -lineHeight / 2 + h / 2; if (drawStart < 0) drawStart = 0;
                 let drawEnd = lineHeight / 2 + h / 2; if (drawEnd >= h) drawEnd = h - 1;
 
                 let colorBase;
                 if (gameState === 'dark_realm') {
-                    let alpha = Math.max(0, 1 - perpWallDist/8);
-                    colorBase = `rgba(30, 30, 30, ${alpha})`;
-                    ctx.fillStyle = colorBase;
-                    ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
-                } 
-                else {
+                    let alpha = Math.max(0, 1 - perpWallDist/8); ctx.fillStyle = `rgba(30, 30, 30, ${alpha})`; ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                } else {
                     let isRayoWall = (hash(mapX + 7.77, mapY + 3.33) > 0.95);
-
                     if (isRayoWall && rayoImg.complete && rayoImg.naturalWidth !== 0) {
-                        let texX = Math.floor(wallX * rayoImg.width);
-                        if(texX < 0) texX = 0;
-                        if(texX >= rayoImg.width) texX = rayoImg.width - 1;
-
-                        ctx.drawImage(
-                            rayoImg, 
-                            texX, 0, 1, rayoImg.height, 
-                            x, drawStart, 2, drawEnd - drawStart
-                        );
-
-                        if (side === 1) {
-                            ctx.fillStyle = "rgba(0,0,0,0.4)";
-                            ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
-                        }
+                        let texX = Math.floor(wallX * rayoImg.width); if(texX < 0) texX = 0; if(texX >= rayoImg.width) texX = rayoImg.width - 1;
+                        ctx.drawImage(rayoImg, texX, 0, 1, rayoImg.height, x, drawStart, 2, drawEnd - drawStart);
+                        if (side === 1) { ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(x, drawStart, 2, drawEnd - drawStart); }
                     } else {
-                        if (wallType === 1) colorBase = "#0000FF";
-                        else if (wallType === 2) colorBase = "#FF00FF";
-                        else if (wallType === 3) colorBase = "#FF0000";
-                        else if (wallType === 4) colorBase = "#FFFFFF";
-                        else if (wallType === 5) colorBase = "#FFFF00";
-                        else if (wallType === 6) colorBase = "#00FF00";
-                        else if (wallType === 7) colorBase = "#FFA500";
-                        else if (wallType === 8) colorBase = "#FFB6C1"; 
-                        else if (wallType === 9) colorBase = "#4A0000"; 
-                        else if (wallType === 10) colorBase = "#000000"; 
-                        else if (wallType === 11) colorBase = "#000000"; 
-                        else if (wallType === 12) colorBase = "#FFFFFF"; 
-                        else colorBase = "#888888"; 
-
-                        ctx.fillStyle = colorBase;
-                        ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                        if (wallType === 1) colorBase = "#0000FF"; else if (wallType === 2) colorBase = "#FF00FF"; else if (wallType === 3) colorBase = "#FF0000"; else if (wallType === 4) colorBase = "#FFFFFF"; else if (wallType === 5) colorBase = "#FFFF00"; else if (wallType === 6) colorBase = "#00FF00"; else if (wallType === 7) colorBase = "#FFA500"; else if (wallType === 8) colorBase = "#FFB6C1"; else if (wallType === 9) colorBase = "#4A0000"; else if (wallType === 10) colorBase = "#000000"; else if (wallType === 11) colorBase = "#000000"; else if (wallType === 12) colorBase = "#FFFFFF"; else colorBase = "#888888"; 
+                        ctx.fillStyle = colorBase; ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
 
                         if (wallType >= 1 && wallType <= 7) {
                             ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
                             if ((wallX * 8) % 1 < 0.1) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
-                            if (wallType % 2 === 0) {
-                                for (let i = 1; i < 5; i++) { 
-                                    let yH = drawStart + (drawEnd - drawStart) * (i / 5);
-                                    if ((wallX * 4) % 1 < 0.5) ctx.fillRect(x, yH, 2, (drawEnd - drawStart) * 0.1);
-                                }
-                            } else {
-                                for (let i = 1; i < 4; i++) { 
-                                    let yH = drawStart + (drawEnd - drawStart) * (i / 4);
-                                    ctx.fillRect(x, yH, 2, 4);
-                                }
-                            }
+                            if (wallType % 2 === 0) { for (let i = 1; i < 5; i++) { let yH = drawStart + (drawEnd - drawStart) * (i / 5); if ((wallX * 4) % 1 < 0.5) ctx.fillRect(x, yH, 2, (drawEnd - drawStart) * 0.1); } } 
+                            else { for (let i = 1; i < 4; i++) { let yH = drawStart + (drawEnd - drawStart) * (i / 4); ctx.fillRect(x, yH, 2, 4); } }
                         }
-
                         if (wallType === 8) {
-                            let movingWall = (wallX + time * 0.005) % 1;
-                            ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+                            let movingWall = (wallX + time * 0.005) % 1; ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
                             if (movingWall < 0.3) ctx.fillRect(x, drawStart + lineHeight * 0.2, 2, lineHeight * 0.3);
                             if (movingWall > 0.6 && movingWall < 0.8) ctx.fillRect(x, drawStart + lineHeight * 0.6, 2, lineHeight * 0.2);
                             if (wallX > 0.45 && wallX < 0.55) { ctx.fillStyle = "#000"; ctx.fillRect(x, drawStart + lineHeight * 0.4 + Math.sin(time*0.05)*10, 2, lineHeight * 0.2); }
                         } 
                         else if (wallType === 9) {
-                            ctx.fillStyle = "#8B0000"; 
-                            if ((wallX * 10 + Math.sin(time*0.1)) % 2 < 0.5) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                            ctx.fillStyle = "#8B0000"; if ((wallX * 10 + Math.sin(time*0.1)) % 2 < 0.5) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
                             if (wallX > 0.3 && wallX < 0.7) {
-                                let eyeCenter = drawStart + lineHeight * 0.5;
-                                ctx.fillStyle = "#FFF"; ctx.fillRect(x, eyeCenter - lineHeight * 0.15, 2, lineHeight * 0.3);
+                                let eyeCenter = drawStart + lineHeight * 0.5; ctx.fillStyle = "#FFF"; ctx.fillRect(x, eyeCenter - lineHeight * 0.15, 2, lineHeight * 0.3);
                                 let pupilOffset = Math.sin(time * 0.1 + mapX) * 0.1;
-                                if (wallX > 0.45 + pupilOffset && wallX < 0.55 + pupilOffset) {
-                                    ctx.fillStyle = "#000"; ctx.fillRect(x, eyeCenter - lineHeight * 0.08, 2, lineHeight * 0.16);
-                                    ctx.fillStyle = "red"; ctx.fillRect(x, eyeCenter - lineHeight * 0.02, 2, lineHeight * 0.04);
-                                }
+                                if (wallX > 0.45 + pupilOffset && wallX < 0.55 + pupilOffset) { ctx.fillStyle = "#000"; ctx.fillRect(x, eyeCenter - lineHeight * 0.08, 2, lineHeight * 0.16); ctx.fillStyle = "red"; ctx.fillRect(x, eyeCenter - lineHeight * 0.02, 2, lineHeight * 0.04); }
                             }
                         }
-                        else if (wallType === 10) {
-                            ctx.fillStyle = "#00FF00";
-                            for (let yG = drawStart; yG < drawEnd; yG += (drawEnd - drawStart) / 10) {
-                                if (Math.random() > 0.5) ctx.fillRect(x, yG, 2, (drawEnd - drawStart) / 10);
-                            }
-                        }
+                        else if (wallType === 10) { ctx.fillStyle = "#00FF00"; for (let yG = drawStart; yG < drawEnd; yG += (drawEnd - drawStart) / 10) { if (Math.random() > 0.5) ctx.fillRect(x, yG, 2, (drawEnd - drawStart) / 10); } }
                         else if (wallType === 11) {
-                            let dripHeight = 0.3 + 0.5 * Math.sin(wallX * 20 + mapX);
-                            let animatedDrip = (time * 0.02 + dripHeight) % 1;
-                            ctx.fillStyle = "#AA0000";
-                            ctx.fillRect(x, drawStart, 2, lineHeight * animatedDrip);
+                            let dripHeight = 0.3 + 0.5 * Math.sin(wallX * 20 + mapX); let animatedDrip = (time * 0.02 + dripHeight) % 1; ctx.fillStyle = "#AA0000"; ctx.fillRect(x, drawStart, 2, lineHeight * animatedDrip);
                         }
                         else if (wallType === 12) {
-                            ctx.fillStyle = "#000";
-                            if ((wallX * 15) % 2 < 1) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
-                            ctx.fillStyle = (Math.sin(time*0.2) > 0) ? "#FFF" : "#000";
-                            ctx.fillRect(x, drawStart + lineHeight * 0.5, 2, lineHeight * 0.05);
+                            ctx.fillStyle = "#000"; if ((wallX * 15) % 2 < 1) ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
+                            ctx.fillStyle = (Math.sin(time*0.2) > 0) ? "#FFF" : "#000"; ctx.fillRect(x, drawStart + lineHeight * 0.5, 2, lineHeight * 0.05);
                         }
-
-                        if (side === 1 && wallType !== 10 && wallType !== 12) {
-                            ctx.fillStyle = "rgba(0,0,0,0.4)";
-                            ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
-                        }
+                        if (side === 1 && wallType !== 10 && wallType !== 12) { ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(x, drawStart, 2, drawEnd - drawStart); }
                     }
                 }
 
                 let floorXWall, floorYWall;
-                if (side === 0 && rayDirX > 0) { floorXWall = mapX; floorYWall = mapY + wallX; }
-                else if (side === 0 && rayDirX < 0) { floorXWall = mapX + 1.0; floorYWall = mapY + wallX; }
-                else if (side === 1 && rayDirY > 0) { floorXWall = mapX + wallX; floorYWall = mapY; }
-                else { floorXWall = mapX + wallX; floorYWall = mapY + 1.0; }
-
-                let drawEndActual = drawEnd;
-                if (drawEndActual < 0) drawEndActual = h; 
+                if (side === 0 && rayDirX > 0) { floorXWall = mapX; floorYWall = mapY + wallX; } else if (side === 0 && rayDirX < 0) { floorXWall = mapX + 1.0; floorYWall = mapY + wallX; } else if (side === 1 && rayDirY > 0) { floorXWall = mapX + wallX; floorYWall = mapY; } else { floorXWall = mapX + wallX; floorYWall = mapY + 1.0; }
+                let drawEndActual = drawEnd; if (drawEndActual < 0) drawEndActual = h; 
 
                 for (let y = drawEndActual + 1; y < h; y += 3) {
                     let currentDist = h / (2.0 * y - h);
-                    
                     if (gameState === 'dark_realm') {
-                        let alpha = Math.max(0, 1 - currentDist/8);
-                        ctx.fillStyle = `rgba(15, 15, 15, ${alpha})`;
-                        ctx.fillRect(x, y, 2, 3);
-                        ctx.fillRect(x, h - y - 3, 2, 3); 
+                        let alpha = Math.max(0, 1 - currentDist/8); ctx.fillStyle = `rgba(15, 15, 15, ${alpha})`; ctx.fillRect(x, y, 2, 3); ctx.fillRect(x, h - y - 3, 2, 3); 
                     } else {
-                        let weight = currentDist / perpWallDist;
-                        let currentFloorX = weight * floorXWall + (1.0 - weight) * playerX;
-                        let currentFloorY = weight * floorYWall + (1.0 - weight) * playerY;
-                        
+                        let weight = currentDist / perpWallDist; let currentFloorX = weight * floorXWall + (1.0 - weight) * playerX; let currentFloorY = weight * floorYWall + (1.0 - weight) * playerY;
                         let checker = (Math.floor(currentFloorX * 4) + Math.floor(currentFloorY * 4)) % 2 === 0;
-                        
-                        ctx.fillStyle = checker ? "#444" : "#111";
-                        ctx.fillRect(x, y, 2, 3);
-                        ctx.fillStyle = checker ? "#112" : "#001";
-                        ctx.fillRect(x, h - y - 3, 2, 3);
+                        ctx.fillStyle = checker ? "#444" : "#111"; ctx.fillRect(x, y, 2, 3); ctx.fillStyle = checker ? "#112" : "#001"; ctx.fillRect(x, h - y - 3, 2, 3);
                     }
                 }
             }
         }
 
         let spritesToDraw = [];
-        if (gameState === 'maze' && stalker.active && stalker.hp > 0) {
-            spritesToDraw.push(stalker);
-        } 
-        else if (gameState === 'dark_realm') {
+        if (gameState === 'maze') {
+            if (stalker.active && stalker.hp > 0) spritesToDraw.push(stalker);
+            if (boss.active && boss.hp > 0) spritesToDraw.push(boss);
+        } else if (gameState === 'dark_realm') {
             for (let s of shadows) spritesToDraw.push(s);
         }
+        if (spritesToDraw.length > 0) drawSprites(spritesToDraw, w, h);
 
-        if (spritesToDraw.length > 0) {
-            drawSprites(spritesToDraw, w, h);
+        // Flash de pantalla (Oscuridad o sangre)
+        if (screenFlash > 0) {
+            ctx.fillStyle = `rgba(0, 0, 0, ${screenFlash / 60})`;
+            ctx.fillRect(0, 0, w, h);
         }
 
-        // Iluminación
         if (gameState === 'maze') {
             let flashlight = ctx.createRadialGradient(w/2, h/2, 20, w/2, h/2, h * 0.9);
-            flashlight.addColorStop(0, "rgba(255, 255, 220, 0.0)"); 
-            flashlight.addColorStop(0.5, "rgba(0, 0, 0, 0.5)");     
-            flashlight.addColorStop(1, "rgba(0, 0, 0, 0.95)");      
-            
-            ctx.fillStyle = flashlight;
-            ctx.fillRect(0, 0, w, h);
+            flashlight.addColorStop(0, "rgba(255, 255, 220, 0.0)"); flashlight.addColorStop(0.5, "rgba(0, 0, 0, 0.5)"); flashlight.addColorStop(1, "rgba(0, 0, 0, 0.95)");      
+            ctx.fillStyle = flashlight; ctx.fillRect(0, 0, w, h);
         } else if (gameState === 'dark_realm') {
             let flashlight = ctx.createRadialGradient(w/2, h/2, 10, w/2, h/2, h * 0.85);
-            flashlight.addColorStop(0, "rgba(255, 255, 255, 0.1)");
-            flashlight.addColorStop(0.4, "rgba(0, 0, 0, 0.6)");     
-            flashlight.addColorStop(1, "rgba(0, 0, 0, 1)");         
-            
-            ctx.fillStyle = flashlight;
-            ctx.fillRect(0, 0, w, h);
+            flashlight.addColorStop(0, "rgba(255, 255, 255, 0.1)"); flashlight.addColorStop(0.4, "rgba(0, 0, 0, 0.6)"); flashlight.addColorStop(1, "rgba(0, 0, 0, 1)");         
+            ctx.fillStyle = flashlight; ctx.fillRect(0, 0, w, h);
         }
 
-        // --- RENDERIZADO DEL ARMA ---
-        let gunOffset = shootFrame > 0 ? 10 : 0; // Retroceso visual si se está disparando
-        
-        // Base de la pistola
-        ctx.fillStyle = "#333333";
-        ctx.fillRect(w/2 - 15, h - 50 + gunOffset, 30, 60);
-        // Cañón
-        ctx.fillStyle = "#555555";
-        ctx.fillRect(w/2 - 5, h - 70 + gunOffset, 10, 20);
-        
-        // Fogonazo
-        if (shootFrame > 4) { // Se ve brillante en la primera mitad del disparo
-            ctx.fillStyle = "#FFFF00";
-            ctx.beginPath();
-            ctx.arc(w/2, h - 75 + gunOffset, 12 + Math.random()*8, 0, Math.PI*2);
-            ctx.fill();
-        }
+        let gunOffset = shootFrame > 0 ? 10 : 0; 
+        ctx.fillStyle = "#333333"; ctx.fillRect(w/2 - 15, h - 50 + gunOffset, 30, 60);
+        ctx.fillStyle = "#555555"; ctx.fillRect(w/2 - 5, h - 70 + gunOffset, 10, 20);
+        if (shootFrame > 4) { ctx.fillStyle = "#FFFF00"; ctx.beginPath(); ctx.arc(w/2, h - 75 + gunOffset, 12 + Math.random()*8, 0, Math.PI*2); ctx.fill(); }
 
-        // --- RENDERIZADO DE LA MIRA (Crosshair) ---
-        ctx.fillStyle = "rgba(0, 255, 0, 0.6)";
-        ctx.fillRect(w/2 - 1, h/2 - 4, 2, 8); // Vertical
-        ctx.fillRect(w/2 - 4, h/2 - 1, 8, 2); // Horizontal
+        ctx.fillStyle = gunCooldown > 0 ? "rgba(255, 0, 0, 0.6)" : "rgba(0, 255, 0, 0.6)"; // Mira roja si estás recargando
+        ctx.fillRect(w/2 - 1, h/2 - 4, 2, 8); ctx.fillRect(w/2 - 4, h/2 - 1, 8, 2);
     }
 
     function gameLoop() {
