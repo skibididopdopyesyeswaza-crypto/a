@@ -178,7 +178,8 @@
     stalkerImg.src = 'monstruo.png'; // <- EL MONSTRUO PRINCIPAL
 
     const shadowImg = new Image();
-    shadowImg.src = 'miniqueque.png'; // <- LOS DEL OTRO MUNDO
+    // AQUI ESTÁN LAS FIGURAS DEL OTRO MUNDO
+    shadowImg.src = 'miniqueque.png'; 
 
     let spawnX = Math.floor(Math.random() * 200 - 100) + 0.5;
     let spawnY = Math.floor(Math.random() * 200 - 100) + 0.5;
@@ -204,7 +205,6 @@
     let zBuffer = new Array(canvas.width); 
 
     // --- ESTADO DE LAS ENTIDADES ---
-    // VELOCIDAD DE LA ENTIDAD PRINCIPAL AUMENTADA (0.75 en lugar de 0.3)
     let stalker = { active: false, x: 0, y: 0, speed: walkSpeed * 0.75 }; 
     let shadows = []; 
     let stalkerTriggerFrame = 7200; 
