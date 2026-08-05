@@ -171,8 +171,12 @@
     const distValue = document.getElementById('dist-value');
 
     // CONFIGURACIÓN DE AUDIO EXTERNO
-    // Asegúrate de tener jijijija.mp3 en la misma carpeta al subir a GitHub
-    const deathAudio = new Audio('jijijijaa.mp3');
+    const deathAudio = new Audio('jijijija.mp3');
+
+    // CONFIGURACIÓN DE IMAGEN DEL MONSTRUO
+    // Asegúrate de tener monstruo.png en tu repositorio de GitHub
+    const stalkerImg = new Image();
+    stalkerImg.src = 'monstruo.png'; 
 
     let spawnX = Math.floor(Math.random() * 200 - 100) + 0.5;
     let spawnY = Math.floor(Math.random() * 200 - 100) + 0.5;
@@ -512,33 +516,30 @@
                 for (let stripe = drawStartX; stripe < drawEndX; stripe += 2) {
                     if (stripe >= 0 && stripe < w && transformY < zBuffer[stripe]) {
                         
-                        let isArm = false;
                         if (s.type === 'stalker') {
-                            // Los brazos largos están en los extremos del cuerpo
-                            if (stripe < drawStartX + sWidth * 0.2 || stripe > drawEndX - sWidth * 0.2) {
-                                isArm = true;
+                            // DIBUJAR LA IMAGEN PNG DEL MONSTRUO
+                            // Solo se dibuja si la imagen ya cargó correctamente
+                            if (stalkerImg.complete && stalkerImg.naturalWidth !== 0) {
+                                // Calcular qué parte de la imagen original (texX) corresponde a esta tira
+                                let texX = Math.floor((stripe - drawStartX) * stalkerImg.width / sWidth);
+                                let texWidth = Math.max(1, Math.floor(2 * stalkerImg.width / sWidth));
+                                
+                                // Dibujar solo esa rebanada vertical de la imagen
+                                ctx.drawImage(
+                                    stalkerImg, 
+                                    texX, 0, texWidth, stalkerImg.height, // Coordenadas y tamaño de origen (en el PNG)
+                                    stripe, drawStartY, 2, drawEndY - drawStartY // Coordenadas y tamaño de destino (en el Canvas)
+                                );
                             }
-                        }
-
-                        let fadeAlpha = 1;
-                        if (gameState === 'dark_realm') {
-                            // Las sombras se desvanecen en la oscuridad
-                            fadeAlpha = Math.max(0, 1 - transformY/8); 
-                        }
-
-                        ctx.fillStyle = s.type === 'stalker' ? "#000" : `rgba(15,15,15,${fadeAlpha})`;
-                        
-                        // Dibujar cuerpo principal
-                        ctx.fillRect(stripe, drawStartY, 2, drawEndY - drawStartY);
-                        
-                        // Dibujar brazos arrastrándose (sobrepasan el cuerpo hacia abajo)
-                        if (isArm) {
-                            let armExtension = sHeight * 0.4;
-                            let armBottom = originalDrawEndY + armExtension;
-                            if (armBottom >= h) armBottom = h - 1;
-                            if (armBottom > drawEndY) {
-                                ctx.fillRect(stripe, drawEndY, 2, armBottom - drawEndY);
+                        } else {
+                            // DIBUJAR LAS SOMBRAS DEL REINO OSCURO (se quedan como rectángulos)
+                            let fadeAlpha = 1;
+                            if (gameState === 'dark_realm') {
+                                // Las sombras se desvanecen en la oscuridad a lo lejos
+                                fadeAlpha = Math.max(0, 1 - transformY/8); 
                             }
+                            ctx.fillStyle = `rgba(15,15,15,${fadeAlpha})`;
+                            ctx.fillRect(stripe, drawStartY, 2, drawEndY - drawStartY);
                         }
                     }
                 }
